@@ -114,6 +114,13 @@ Existing actions:
    `topo.vertices[v].x * S`, `.y * S`) and use its `onVertexClick` /
    `onEdgeClick` / `onHexClick` props with `vertexFilter` / `edgeFilter` to
    offer only legal spots.
+   The user can turn the board to match their seat by twisting two fingers
+   on it or dragging its ⟳ handle; it snaps to 30° on release
+   (`components/boardRotation.ts`, `components/useBoardTwist.ts`; saved per
+   device, view-only). One-finger taps and page scrolling are untouched. Your SVG
+   children turn with it; keep text and piece shapes upright with
+   `const { deg } = useBoardRotation()` and
+   `transform={`translate(${x} ${y}) rotate(${-deg})`}`.
 6. Run `npm run check` before pushing. Design for a phone first: tap targets of
    at least 40px, nothing that needs hover.
 

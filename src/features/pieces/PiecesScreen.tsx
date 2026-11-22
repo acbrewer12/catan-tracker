@@ -11,6 +11,7 @@
  */
 import { useMemo, useState } from 'react';
 import { HexBoard, S } from '../../components/HexBoard';
+import { useBoardRotation } from '../../components/boardRotation';
 import { TERRAIN_STYLE } from '../../components/theme';
 import { topologyFor } from '../../model/board';
 import {
@@ -46,6 +47,7 @@ const HOUSE = 'M -17 17 V -4 L 0 -21 L 17 -4 V 17 Z';
 const CITY = 'M -27 19 V -4 H -7 V -17 L 8 -31 L 23 -17 V 19 Z';
 
 export function PiecesScreen({ go }: { go?: (id: string) => void }) {
+  const { deg } = useBoardRotation();
   const { state, dispatch } = useGame();
   const { board, players, pieces } = state;
   const topo = topologyFor(board.layout);
@@ -186,7 +188,7 @@ export function PiecesScreen({ go }: { go?: (id: string) => void }) {
     if (!vert || !p) return null;
     const isSel = sel?.kind === 'building' && sel.vertex === v;
     return (
-      <g key={v} className="piece" transform={`translate(${vert.x * S} ${vert.y * S})`} onClick={() => tapPiece({ kind: 'building', vertex: v })}>
+      <g key={v} className="piece" transform={`translate(${vert.x * S} ${vert.y * S}) rotate(${-deg})`} onClick={() => tapPiece({ kind: 'building', vertex: v })}>
         {isSel && <circle r={38} fill="#fff" stroke="#1d1710" strokeWidth={4} strokeDasharray="8 5" />}
         <path d={b.kind === 'city' ? CITY : HOUSE} fill={p.color} stroke="#1d1710" strokeWidth={3.5} strokeLinejoin="round" />
         <circle r={30} fill="transparent" />
