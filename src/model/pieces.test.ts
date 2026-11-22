@@ -9,6 +9,8 @@ import {
   legalSettlementSpots,
   longestRoad,
   longestRoadHolder,
+  firstPlayer,
+  openingSequence,
   openingTurn,
   piecesLeft,
   robberVictims,
@@ -187,5 +189,35 @@ describe('opening order', () => {
     }
     expect(order).toEqual([ids[0], ids[1], ids[2], ids[2], ids[1], ids[0]]);
     expect(openingTurn(s)).toBeNull();
+  });
+});
+
+describe('who goes first', () => {
+  it('defaults to the top of the player list', () => {
+    const s = game(3);
+    const ids = s.players.map((p) => p.id);
+    expect(firstPlayer(s)).toEqual({ decided: true, player: ids[0] });
+    expect(openingSequence(s)).toEqual([ids[0], ids[1], ids[2], ids[2], ids[1], ids[0]]);
+  });
+
+  it('highest roll goes first, ties re-roll, then round the table and back', () => {
+    let s = game(4);
+    const [a, b, c, d] = s.players.map((p) => p.id);
+    s = run(s, { type: 'game/setRules', rules: { firstPlayerBy: 'dice' } });
+    expect(firstPlayer(s)).toEqual({ decided: false, waiting: [a, b, c, d], tied: [] });
+    s = run(
+      s,
+      { type: 'game/addStartRoll', player: a, total: 5 },
+      { type: 'game/addStartRoll', player: b, total: 10 },
+      { type: 'game/addStartRoll', player: c, total: 10 },
+      { type: 'game/addStartRoll', player: d, total: 7 },
+    );
+    expect(firstPlayer(s)).toEqual({ decided: false, waiting: [b, c], tied: [b, c] });
+    s = run(s, { type: 'game/addStartRoll', player: b, total: 4 }, { type: 'game/addStartRoll', player: c, total: 9 });
+    expect(firstPlayer(s)).toEqual({ decided: true, player: c });
+    expect(openingSequence(s)).toEqual([c, d, a, b, b, a, d, c]);
+    expect(openingTurn(s)).toEqual({ player: c, place: 'settlement' });
+    s = run(s, { type: 'game/clearStartRolls' });
+    expect(firstPlayer(s).decided).toBe(false);
   });
 });

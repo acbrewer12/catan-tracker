@@ -152,6 +152,17 @@ export type CardEvent = { id: string; at: number } & (
 
 export type Phase = 'setup' | 'placement' | 'playing';
 
+/** How the first player is chosen: top of the Players list (e.g. oldest), or highest dice roll. */
+export type FirstPlayerBy = 'list' | 'dice';
+
+export interface Rules {
+  firstPlayerBy: FirstPlayerBy;
+  /** Opening dice rolls per player, in order; later entries are tie-break re-rolls. */
+  startRolls: Record<PlayerId, number[]>;
+}
+
+export const DEFAULT_RULES: Rules = { firstPlayerBy: 'list', startRolls: {} };
+
 export interface GameState {
   /** Schema version for localStorage migrations. */
   version: 1;
@@ -166,6 +177,8 @@ export interface GameState {
   hands: Record<PlayerId, Hand>;
   /** Every card movement, oldest first. `hands` is derived from it. */
   cardLog: CardEvent[];
+  /** Table rules. Optional so older saves load; read it through `rulesOf()` in model/pieces.ts. */
+  rules?: Partial<Rules>;
 }
 
 export const emptyResources = (): ResourceCounts => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
