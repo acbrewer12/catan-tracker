@@ -7,7 +7,7 @@ export function PlayersSetup() {
   const max = state.board.layout === 'extended' ? 6 : 4;
   return (
     <div className="screen players">
-      <p className="hint">List players in turn order. Mark which one is you so the app can track your cards exactly.</p>
+      <p className="hint">List players in seating order, going clockwise. Mark which one is you so the app can track your cards exactly.</p>
       <ul className="player-list">
         {state.players.map((p, i) => (
           <li key={p.id} className={p.isMe ? 'me' : ''}>

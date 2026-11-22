@@ -35,3 +35,11 @@
 .roll-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .roll-grid .num { min-height: 44px; padding: 4px 0; }
 button.link.inline { min-height: 0; padding: 0; display: inline; }
+
+.age-order { margin: 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 4px; }
+.age-order li { padding-left: 2px; }
+.age-order li > * { vertical-align: middle; }
+.age-order li { display: list-item; }
+.age-order .swatch { display: inline-block; width: 16px; height: 16px; margin-right: 6px; }
+.age-order .name { display: inline-block; min-width: 110px; font-weight: 600; }
+.age-order .icon-btn { min-width: 44px; margin-left: 4px; }
