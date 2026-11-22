@@ -10,6 +10,7 @@ import {
   longestRoad,
   longestRoadHolder,
   firstPlayer,
+  turnOrder,
   openingSequence,
   openingTurn,
   piecesLeft,
@@ -198,6 +199,23 @@ describe('who goes first', () => {
     const ids = s.players.map((p) => p.id);
     expect(firstPlayer(s)).toEqual({ decided: true, player: ids[0] });
     expect(openingSequence(s)).toEqual([ids[0], ids[1], ids[2], ids[2], ids[1], ids[0]]);
+  });
+
+  it('oldest first: opening by age and back, then clockwise from the oldest', () => {
+    let s = game(4);
+    const [a, b, c, d] = s.players.map((p) => p.id); // seating order, clockwise
+    s = run(s, { type: 'game/setRules', rules: { ageOrder: [c, a, d, b] } });
+    expect(firstPlayer(s)).toEqual({ decided: true, player: c });
+    expect(openingSequence(s)).toEqual([c, a, d, b, b, d, a, c]);
+    expect(turnOrder(s)).toEqual([c, d, a, b]);
+    expect(openingTurn(s)).toEqual({ player: c, place: 'settlement' });
+  });
+
+  it('unranked or removed players fall back to seating order', () => {
+    let s = game(4);
+    const [a, b, c, d] = s.players.map((p) => p.id);
+    s = run(s, { type: 'game/setRules', rules: { ageOrder: [d, 'gone'] } });
+    expect(openingSequence(s).slice(0, 4)).toEqual([d, a, b, c]);
   });
 
   it('highest roll goes first, ties re-roll, then round the table and back', () => {

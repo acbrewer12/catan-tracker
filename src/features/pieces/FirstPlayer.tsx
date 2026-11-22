@@ -1,10 +1,11 @@
 /**
- * "Who goes first?" before the opening round: the top of the Players list
- * (e.g. oldest first), or everyone rolls and the highest goes first, with
- * tied players rolling again. The opening then goes round the table from
- * that player and back (see openingSequence in model/pieces.ts).
+ * "Who goes first?" before the opening round.
+ * Oldest first: rank players by age; the opening goes oldest to youngest,
+ * then youngest to oldest, and play starts with the oldest going clockwise.
+ * Roll for it: highest roll starts (ties re-roll); the opening goes clockwise
+ * from them and back. See openingSequence in model/pieces.ts.
  */
-import { firstPlayer, rulesOf } from '../../model/pieces';
+import { ageOrderOf, firstPlayer, rulesOf } from '../../model/pieces';
 import { useGame } from '../../state/store';
 
 const TOTALS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -17,6 +18,12 @@ export function FirstPlayer({ go }: { go?: (id: string) => void }) {
   const color = (id: string) => state.players.find((p) => p.id === id)?.color;
   const rolling = !status.decided ? status.waiting[0] : null;
   const anyRolls = Object.values(startRolls).some((r) => r.length);
+  const ages = ageOrderOf(state);
+  function moveAge(i: number, delta: -1 | 1) {
+    const next = [...ages];
+    [next[i], next[i + delta]] = [next[i + delta], next[i]];
+    dispatch({ type: 'game/setRules', rules: { ageOrder: next } });
+  }
 
   return (
     <div className="palette first-player">
@@ -25,7 +32,7 @@ export function FirstPlayer({ go }: { go?: (id: string) => void }) {
       </div>
       <div className="segmented full" role="tablist" aria-label="How to pick the first player">
         <button className={firstPlayerBy === 'list' ? 'on' : ''} onClick={() => dispatch({ type: 'game/setRules', rules: { firstPlayerBy: 'list' } })}>
-          Top of player list
+          👴 Oldest first
         </button>
         <button className={firstPlayerBy === 'dice' ? 'on' : ''} onClick={() => dispatch({ type: 'game/setRules', rules: { firstPlayerBy: 'dice' } })}>
           🎲 Roll for it
@@ -33,18 +40,34 @@ export function FirstPlayer({ go }: { go?: (id: string) => void }) {
       </div>
 
       {firstPlayerBy === 'list' ? (
-        <p className="hint">
-          {status.decided && <><b>{name(status.player)}</b> goes first. </>}
-          Put the oldest player (or whoever starts) at the top of the{' '}
-          {go ? (
-            <button className="link inline" onClick={() => go('players')}>
-              Players list
-            </button>
-          ) : (
-            'Players list'
-          )}
-          , then the rest in seating order.
-        </p>
+        <>
+          <p className="hint">Order by age, oldest at the top:</p>
+          <ol className="age-order">
+            {ages.map((id, i) => (
+              <li key={id}>
+                <span className="swatch" style={{ background: color(id) }} />
+                <span className="name">{name(id)}</span>
+                <button className="icon-btn" aria-label={`${name(id)} is older`} disabled={i === 0} onClick={() => moveAge(i, -1)}>
+                  ↑
+                </button>
+                <button className="icon-btn" aria-label={`${name(id)} is younger`} disabled={i === ages.length - 1} onClick={() => moveAge(i, 1)}>
+                  ↓
+                </button>
+              </li>
+            ))}
+          </ol>
+          <p className="hint">
+            Opening: oldest to youngest, then youngest to oldest. Then <b>{name(ages[0])}</b> starts and play goes clockwise in the{' '}
+            {go ? (
+              <button className="link inline" onClick={() => go('players')}>
+                seating order on Players
+              </button>
+            ) : (
+              'seating order on Players'
+            )}
+            .
+          </p>
+        </>
       ) : (
         <>
           <ul className="start-rolls">

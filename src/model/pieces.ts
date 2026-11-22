@@ -176,14 +176,22 @@ export type FirstPlayerStatus =
   /** Still rolling: `waiting` must (re)roll. `tied` is set once a re-roll is needed. */
   | { decided: false; waiting: PlayerId[]; tied: PlayerId[] };
 
+/** Players oldest to youngest (anyone not ranked yet goes last, in seating order). */
+export function ageOrderOf(s: GameState): PlayerId[] {
+  const ids = s.players.map((p) => p.id);
+  const ranked = rulesOf(s).ageOrder.filter((id, i, a) => ids.includes(id) && a.indexOf(id) === i);
+  return [...ranked, ...ids.filter((id) => !ranked.includes(id))];
+}
+
 /**
- * Who goes first. 'list': the top of the Players list. 'dice': highest roll;
- * players tied for highest roll again until one is ahead.
+ * Who goes first. 'list': the oldest player. 'dice': highest roll; players
+ * tied for highest roll again until one is ahead.
  */
 export function firstPlayer(s: GameState): FirstPlayerStatus {
   const ids = s.players.map((p) => p.id);
   const { firstPlayerBy, startRolls } = rulesOf(s);
-  if (firstPlayerBy !== 'dice' || !ids.length) return ids.length ? { decided: true, player: ids[0] } : { decided: false, waiting: [], tied: [] };
+  if (!ids.length) return { decided: false, waiting: [], tied: [] };
+  if (firstPlayerBy !== 'dice') return { decided: true, player: ageOrderOf(s)[0] };
   let alive = ids;
   for (let round = 0; ; round++) {
     const waiting = alive.filter((id) => startRolls[id]?.[round] === undefined);
@@ -196,8 +204,8 @@ export function firstPlayer(s: GameState): FirstPlayerStatus {
 }
 
 /**
- * Turn order starting from the first player and going round the table
- * (Players list order). Before the dice decide, starts at the top of the list.
+ * Normal turn order: from the first player, clockwise round the table
+ * (Players list = seating order). Before the dice decide, starts at the top.
  */
 export function turnOrder(s: GameState): PlayerId[] {
   const ids = s.players.map((p) => p.id);
@@ -206,9 +214,12 @@ export function turnOrder(s: GameState): PlayerId[] {
   return [...ids.slice(start), ...ids.slice(0, start)];
 }
 
-/** Who places in each of the 2N opening picks: round the table from the first player, then back. */
+/**
+ * Who places in each of the 2N opening picks, then back the other way.
+ * Oldest-first: by age, oldest to youngest. Dice: clockwise from the winner.
+ */
 export function openingSequence(s: GameState): PlayerId[] {
-  const round = turnOrder(s);
+  const round = rulesOf(s).firstPlayerBy === 'dice' ? turnOrder(s) : ageOrderOf(s);
   return [...round, ...[...round].reverse()];
 }
 

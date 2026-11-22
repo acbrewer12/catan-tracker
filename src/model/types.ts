@@ -153,15 +153,23 @@ export type CardEvent = { id: string; at: number } & (
 export type Phase = 'setup' | 'placement' | 'playing';
 
 /** How the first player is chosen: top of the Players list (e.g. oldest), or highest dice roll. */
+/**
+ * How the opening is ordered.
+ * 'list' (oldest first): opening goes oldest to youngest by age, then youngest
+ *   to oldest; normal play starts with the oldest and goes clockwise.
+ * 'dice': highest roll starts; opening goes clockwise from them and back.
+ */
 export type FirstPlayerBy = 'list' | 'dice';
 
 export interface Rules {
   firstPlayerBy: FirstPlayerBy;
   /** Opening dice rolls per player, in order; later entries are tie-break re-rolls. */
   startRolls: Record<PlayerId, number[]>;
+  /** Players oldest to youngest. Missing players fall in after, in seating order. */
+  ageOrder: PlayerId[];
 }
 
-export const DEFAULT_RULES: Rules = { firstPlayerBy: 'list', startRolls: {} };
+export const DEFAULT_RULES: Rules = { firstPlayerBy: 'list', startRolls: {}, ageOrder: [] };
 
 export interface GameState {
   /** Schema version for localStorage migrations. */
