@@ -43,6 +43,12 @@ GameState {
 
 - `Hex.terrain` is a resource, `'desert'`, or `null` (not entered yet).
   `Hex.number` is 2 to 12, never 7, null on the desert.
+- `cardLog` records every card movement (`CardEvent`). `hands` is rebuilt
+  from it after each change, so never write `hands` directly: log an event.
+  Piece actions charge build costs automatically (`syncBuilds` in
+  `slices/dice.ts`). For detail beyond `hands` (min / max / expected per
+  resource, dev cards left, bank) use `handEstimates`, `devCardsLeft` and
+  `bankLeft` from `model/cards.ts`.
 - `hands[me]` is exact. For opponents it is an estimate; `unknown` counts cards
   we know exist but can't name (for example after a steal we didn't see).
 
@@ -90,7 +96,7 @@ Existing actions:
 | `board` | `setLayout`, `setTerrain`, `setNumber`, `setPort`, `clear`, `randomize`, `replace` |
 | `players` | `add`, `remove`, `rename`, `setColor`, `setMe`, `move` |
 | `pieces` / `robber` | `pieces/setBuilding`, `pieces/removeBuilding`, `pieces/moveBuilding`, `pieces/setRoad`, `pieces/removeRoad`, `pieces/moveRoad`, `robber/move`. Moves are corrections, not builds. Rule checks, piece limits, longest road and robber helpers are in `model/pieces.ts` |
-| `dice` / `hands` | `dice/add`, `dice/removeLast`, `hands/set` (baseline) |
+| `dice` / `hands` / `cards` | `dice/add` (also logs the payout), `dice/removeLast`, `dice/remove`, `hands/set`, `cards/log`, `cards/remove` |
 | `game` | `setPhase`, `new`, `load` |
 
 ## Adding a feature

@@ -27,6 +27,9 @@ export function loadSaved(): GameState | null {
 /** Upgrade older saves. Bump GameState.version and add a step here when the shape changes. */
 export function migrate(s: GameState): GameState | null {
   if (!s || typeof s !== 'object' || s.version !== 1) return null;
+  // Added after v1 shipped: card log + knights played. Additive, so no version bump.
+  if (!Array.isArray(s.cardLog)) s = { ...s, cardLog: [] };
+  s = { ...s, hands: Object.fromEntries(Object.entries(s.hands ?? {}).map(([k, h]) => [k, { ...h, knightsPlayed: h.knightsPlayed ?? 0 }])) };
   return s;
 }
 

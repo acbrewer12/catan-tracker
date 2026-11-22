@@ -102,8 +102,53 @@ export interface DiceRoll {
 export interface Hand {
   resources: ResourceCounts;
   unknown: number;
+  /** Development cards held, not yet played. */
   devCards: number;
+  /** Knight cards played so far (largest army). */
+  knightsPlayed: number;
 }
+
+export type DevCardKind = 'knight' | 'roadBuilding' | 'yearOfPlenty' | 'monopoly' | 'victoryPoint';
+export type BuildItem = 'road' | 'settlement' | 'city' | 'devCard';
+
+/**
+ * One thing that moved resource cards. `GameState.cardLog` is the record of
+ * these; `hands` is rebuilt from it (see model/cards.ts). Spots point at the
+ * board corner / edge a build was placed on, so piece corrections can find it.
+ */
+export type CardEvent = { id: string; at: number } & (
+  | { kind: 'production'; rollId: string; gains: Record<PlayerId, Partial<ResourceCounts>> }
+  | { kind: 'gain'; player: PlayerId; resources: Partial<ResourceCounts> }
+  | { kind: 'lose'; player: PlayerId; resources: Partial<ResourceCounts>; reason?: 'discard' | 'other' }
+  | {
+      kind: 'build';
+      player: PlayerId;
+      item: BuildItem;
+      spot?: VertexId | EdgeId;
+      /** Opening placement or Road Building: no cost. */
+      free?: boolean;
+      /** Resources from a second opening settlement. */
+      startGain?: Partial<ResourceCounts>;
+      /** Which card was drawn, when it's the user's own. */
+      devCard?: DevCardKind;
+    }
+  | { kind: 'trade'; player: PlayerId; with: PlayerId | 'bank'; give: Partial<ResourceCounts>; get: Partial<ResourceCounts> }
+  | { kind: 'steal'; thief: PlayerId; victim: PlayerId; resource?: Resource }
+  | {
+      kind: 'playDev';
+      player: PlayerId;
+      card: DevCardKind;
+      /** Year of Plenty: what they took. */
+      take?: Partial<ResourceCounts>;
+      /** Monopoly: the resource and how many each other player handed over. */
+      resource?: Resource;
+      taken?: Record<PlayerId, number>;
+    }
+  /** Correction: this is exactly the hand (e.g. the user's own cards). */
+  | { kind: 'set'; player: PlayerId; resources: ResourceCounts }
+  /** Correction: they hold this many cards (types unknown for any change). */
+  | { kind: 'setTotal'; player: PlayerId; total: number }
+);
 
 export type Phase = 'setup' | 'placement' | 'playing';
 
@@ -119,7 +164,9 @@ export interface GameState {
   /** Oldest first. */
   diceHistory: DiceRoll[];
   hands: Record<PlayerId, Hand>;
+  /** Every card movement, oldest first. `hands` is derived from it. */
+  cardLog: CardEvent[];
 }
 
 export const emptyResources = (): ResourceCounts => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });
-export const emptyHand = (): Hand => ({ resources: emptyResources(), unknown: 0, devCards: 0 });
+export const emptyHand = (): Hand => ({ resources: emptyResources(), unknown: 0, devCards: 0, knightsPlayed: 0 });

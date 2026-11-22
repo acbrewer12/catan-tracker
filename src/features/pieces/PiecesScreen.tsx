@@ -26,6 +26,7 @@ import {
 } from '../../model/pieces';
 import type { EdgeId, HexId, Player, PlayerId, VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
+import { StealPicker } from '../dice/StealPicker';
 import './pieces.css';
 
 type Tool = 'settlement' | 'city' | 'road' | 'robber';
@@ -344,6 +345,7 @@ export function PiecesScreen({ go }: { go?: (id: string) => void }) {
                 ) : (
                   <p className="hint">Nobody has a building on this tile.</p>
                 )}
+                {blocked.length > 0 && <StealPicker />}
               </>
             ) : (
               <p className="hint">The robber isn't on the board yet.</p>

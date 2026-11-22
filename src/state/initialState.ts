@@ -18,5 +18,6 @@ export function newGame(layout: LayoutId = 'standard', playerCount = 4): GameSta
     robber: null,
     diceHistory: [],
     hands: Object.fromEntries(players.map((p) => [p.id, emptyHand()])),
+    cardLog: [],
   };
 }
