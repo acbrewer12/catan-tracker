@@ -10,7 +10,7 @@
  *   longestRoad(state, player)                           -> length of their longest road
  */
 import { topologyFor } from './board';
-import type { Building, BuildingKind, EdgeId, GameState, HexId, PlayerId, VertexId } from './types';
+import { DEFAULT_RULES, type Building, type BuildingKind, type EdgeId, type GameState, type HexId, type PlayerId, type Rules, type VertexId } from './types';
 
 /** Pieces each player owns in the box (same for the base game and the 5-6 extension). */
 export const PIECE_LIMITS = { settlement: 5, city: 4, road: 15 } as const;
@@ -166,15 +166,62 @@ export function boardPoints(s: GameState, player: PlayerId, holder = longestRoad
   return c.settlement + 2 * c.city + (holder === player ? 2 : 0);
 }
 
+/** The table's rules with defaults filled in. */
+export function rulesOf(s: GameState): Rules {
+  return { ...DEFAULT_RULES, ...s.rules };
+}
+
+export type FirstPlayerStatus =
+  | { decided: true; player: PlayerId }
+  /** Still rolling: `waiting` must (re)roll. `tied` is set once a re-roll is needed. */
+  | { decided: false; waiting: PlayerId[]; tied: PlayerId[] };
+
 /**
- * Opening round order: 1..N then N..1. Returns whose turn it is and what they
- * place next, or null once everyone has 2 settlements and 2 roads.
+ * Who goes first. 'list': the top of the Players list. 'dice': highest roll;
+ * players tied for highest roll again until one is ahead.
+ */
+export function firstPlayer(s: GameState): FirstPlayerStatus {
+  const ids = s.players.map((p) => p.id);
+  const { firstPlayerBy, startRolls } = rulesOf(s);
+  if (firstPlayerBy !== 'dice' || !ids.length) return ids.length ? { decided: true, player: ids[0] } : { decided: false, waiting: [], tied: [] };
+  let alive = ids;
+  for (let round = 0; ; round++) {
+    const waiting = alive.filter((id) => startRolls[id]?.[round] === undefined);
+    if (waiting.length) return { decided: false, waiting, tied: round ? alive : [] };
+    const max = Math.max(...alive.map((id) => startRolls[id][round]));
+    const top = alive.filter((id) => startRolls[id][round] === max);
+    if (top.length === 1) return { decided: true, player: top[0] };
+    alive = top;
+  }
+}
+
+/**
+ * Turn order starting from the first player and going round the table
+ * (Players list order). Before the dice decide, starts at the top of the list.
+ */
+export function turnOrder(s: GameState): PlayerId[] {
+  const ids = s.players.map((p) => p.id);
+  const f = firstPlayer(s);
+  const start = f.decided ? Math.max(0, ids.indexOf(f.player)) : 0;
+  return [...ids.slice(start), ...ids.slice(0, start)];
+}
+
+/** Who places in each of the 2N opening picks: round the table from the first player, then back. */
+export function openingSequence(s: GameState): PlayerId[] {
+  const round = turnOrder(s);
+  return [...round, ...[...round].reverse()];
+}
+
+/**
+ * Whose opening pick it is and what they place next, or null once everyone
+ * has 2 settlements and 2 roads.
  */
 export function openingTurn(s: GameState): { player: PlayerId; place: 'settlement' | 'road' } | null {
   const n = s.players.length;
   if (!n) return null;
+  const seq = openingSequence(s);
   for (let k = 0; k < 2 * n; k++) {
-    const p = s.players[k < n ? k : 2 * n - 1 - k];
+    const p = { id: seq[k] };
     const round = k < n ? 1 : 2;
     const c = pieceCounts(s, p.id);
     const buildings = c.settlement + c.city;

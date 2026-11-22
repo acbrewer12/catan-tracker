@@ -151,7 +151,7 @@ function StartTips({ state, me }: { state: GameState; me: PlayerId }) {
   const advice = useMemo(() => placementAdvice(state, 6), [state]);
   const [picked, setPicked] = useState(0);
   const name = (id: PlayerId | null) => state.players.find((p) => p.id === id)?.name ?? '?';
-  const order = placementOrder(state.players);
+  const order = placementOrder(state);
   const sel = advice.ranked[Math.min(picked, advice.ranked.length - 1)];
 
   if (advice.pickIndex === null)

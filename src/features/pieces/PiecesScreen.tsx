@@ -4,7 +4,8 @@
  *
  * Flow on a phone: pick a player chip, pick a tool, tap a glowing spot.
  * Tap an existing piece to upgrade, move, remove or change its owner.
- * During the opening round it follows the snake order automatically.
+ * Before anything is placed it asks who goes first (list order or dice);
+ * the opening round then follows round the table and back automatically.
  * "Enforce rules" shows only legal spots; turn it off to enter anything
  * (handy for fixing mistakes) and get a warning instead.
  */
@@ -20,6 +21,7 @@ import {
   checkRoad,
   longestRoad,
   longestRoadHolder,
+  firstPlayer,
   openingTurn,
   piecesLeft,
   type Problem,
@@ -27,6 +29,7 @@ import {
 import type { EdgeId, HexId, Player, PlayerId, VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
 import { StealPicker } from '../dice/StealPicker';
+import { FirstPlayer } from './FirstPlayer';
 import './pieces.css';
 
 type Tool = 'settlement' | 'city' | 'road' | 'robber';
@@ -55,8 +58,10 @@ export function PiecesScreen({ go }: { go?: (id: string) => void }) {
   const [moving, setMoving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const turn = openingTurn(state);
+  const decided = firstPlayer(state).decided;
+  const turn = decided ? openingTurn(state) : null;
   const following = follow && !!turn;
+  const nothingPlaced = Object.keys(pieces.buildings).length === 0 && Object.keys(pieces.roads).length === 0;
   const playerId = following ? turn!.player : players.some((p) => p.id === chosenPlayer) ? chosenPlayer! : players[0]?.id;
   const tool: Tool = following && chosenTool !== 'robber' ? turn!.place : chosenTool;
   const player = players.find((p) => p.id === playerId);
@@ -259,6 +264,8 @@ export function PiecesScreen({ go }: { go?: (id: string) => void }) {
           </button>
         ))}
       </div>
+
+      {nothingPlaced && <FirstPlayer go={go} />}
 
       {turn && (
         <div className={`opening ${following ? 'on' : ''}`}>

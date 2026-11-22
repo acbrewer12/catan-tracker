@@ -12,6 +12,7 @@
 import { pips, portAtVertex, topologyFor } from './board';
 import type { Board, GameState, Hex, PlayerId, Port, Resource, ResourceCounts, VertexId } from './types';
 import { RESOURCES, emptyResources } from './types';
+import { openingSequence } from './pieces';
 
 /** Rough early-game importance of each resource (roads and settlements first). */
 const BASE_WEIGHT: ResourceCounts = { wood: 1, brick: 1, sheep: 0.85, wheat: 1.05, ore: 0.95 };
@@ -152,11 +153,8 @@ export function rankCorners(state: GameState, player: PlayerId | null, filter?: 
 // ---------------------------------------------------------------------------
 // Snake draft
 
-/** Setup pick order: 1..n then n..1 (each pick = one settlement + road). */
-export function placementOrder(players: { id: PlayerId }[]): PlayerId[] {
-  const ids = players.map((p) => p.id);
-  return [...ids, ...[...ids].reverse()];
-}
+/** Setup pick order (each pick = one settlement + road), from the chosen first player. */
+export const placementOrder = (state: GameState): PlayerId[] => openingSequence(state);
 
 export interface PlacementAdvice {
   /** Index into the snake order of the next pick, or null when setup is over. */
@@ -216,7 +214,7 @@ export function bestStartingRoad(state: GameState, v: VertexId, player: PlayerId
 /** Advice for the setup phase from the current board and buildings. */
 export function placementAdvice(state: GameState, top = 6): PlacementAdvice {
   const me = state.players.find((p) => p.isMe)?.id ?? null;
-  const order = placementOrder(state.players);
+  const order = placementOrder(state);
   const placed = Object.keys(state.pieces.buildings).length;
   const pickIndex = placed < order.length ? placed : null;
   const myPicks = me ? order.map((p, i) => (p === me && i >= placed ? i : -1)).filter((i) => i >= 0) : [];

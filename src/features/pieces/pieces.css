@@ -24,3 +24,14 @@
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #0004; margin-right: 3px; vertical-align: baseline; }
 .strict { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 40px; }
 .strict input { flex: none; min-height: 0; width: 20px; height: 20px; }
+
+.first-player .segmented button { min-height: 44px; }
+.start-rolls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 15px; }
+.start-rolls li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 8px; }
+.start-rolls li.on { background: #fff4d6; }
+.start-rolls .swatch { width: 16px; height: 16px; }
+.start-rolls .rolls { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.first-player p { margin: 0; }
+.roll-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.roll-grid .num { min-height: 44px; padding: 4px 0; }
+button.link.inline { min-height: 0; padding: 0; display: inline; }

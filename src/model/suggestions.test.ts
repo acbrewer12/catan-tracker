@@ -23,7 +23,8 @@ const res = (o: Partial<ResourceCounts>): ResourceCounts => ({ wood: 0, brick: 0
 
 describe('placement', () => {
   it('snake order goes 1..n then n..1', () => {
-    expect(placementOrder([{ id: 'a' }, { id: 'b' }, { id: 'c' }])).toEqual(['a', 'b', 'c', 'c', 'b', 'a']);
+    const g3 = { ...game(), players: ['a', 'b', 'c'].map((id) => ({ id, name: id, color: '#000', isMe: id === 'a' })) };
+    expect(placementOrder(g3)).toEqual(['a', 'b', 'c', 'c', 'b', 'a']);
   });
 
   it('ranks a 6/8/5 three-resource corner first', () => {
@@ -69,7 +70,7 @@ describe('placement', () => {
 
   it('has no advice once all setup picks are made', () => {
     const g = game();
-    const order = placementOrder(g.players);
+    const order = placementOrder(g);
     for (const p of order) {
       const best = rankCorners(g, p)[0];
       g.pieces.buildings[best.vertex] = { player: p, kind: 'settlement' };
