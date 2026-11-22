@@ -5,6 +5,7 @@
 import type { ReactNode } from 'react';
 import { BoardInput } from './board-input/BoardInput';
 import { PlayersSetup } from './players/PlayersSetup';
+import { DiceScreen } from './dice/DiceScreen';
 
 export interface Screen {
   id: string;
@@ -23,6 +24,6 @@ export const SCREENS: Screen[] = [
   { id: 'board', label: 'Board', icon: '⬢', render: (go) => <BoardInput onDone={() => go('players')} /> },
   { id: 'players', label: 'Players', icon: '👥', render: () => <PlayersSetup /> },
   { id: 'pieces', label: 'Pieces', icon: '🏠', render: () => <ComingSoon what="Tracking settlements, cities, roads and the robber" /> },
-  { id: 'dice', label: 'Dice', icon: '🎲', render: () => <ComingSoon what="Dice rolls and cards" /> },
+  { id: 'dice', label: 'Dice', icon: '🎲', render: (go) => <DiceScreen go={go} /> },
   { id: 'tips', label: 'Tips', icon: '💡', render: () => <ComingSoon what="Placement and strategy suggestions" /> },
 ];

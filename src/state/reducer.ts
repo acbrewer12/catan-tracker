@@ -5,7 +5,7 @@
  */
 import type { GameState } from '../model/types';
 import { boardReducer, type BoardAction } from './slices/board';
-import { diceReducer, type DiceAction } from './slices/dice';
+import { diceReducer, syncBuilds, type DiceAction } from './slices/dice';
 import { gameReducer, type GameAction } from './slices/game';
 import { piecesReducer, type PiecesAction } from './slices/pieces';
 import { playersReducer, type PlayersAction } from './slices/players';
@@ -22,10 +22,14 @@ const SLICES: Record<string, SliceReducer> = {
   robber: piecesReducer,
   dice: diceReducer,
   hands: diceReducer,
+  cards: diceReducer,
   game: gameReducer,
 };
 
 export function reducer(s: GameState, a: Action): GameState {
-  const slice = SLICES[a.type.split('/')[0]];
-  return slice ? slice(s, a) ?? s : s;
+  const prefix = a.type.split('/')[0];
+  const slice = SLICES[prefix];
+  const next = slice ? slice(s, a) ?? s : s;
+  // Builds on the board charge their owner's hand (see slices/dice.ts).
+  return prefix === 'pieces' && next !== s ? syncBuilds(s, next, a) : next;
 }
