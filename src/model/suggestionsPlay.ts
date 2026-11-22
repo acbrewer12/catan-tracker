@@ -3,6 +3,7 @@
  * expand, and where to put the robber. Pure functions, no React.
  */
 import { pips, portAtVertex, topologyFor } from './board';
+import { COST } from './cards';
 import { boardPoints, checkBuilding, longestRoadHolder, piecesLeft } from './pieces';
 import { isOpenCorner, isResource, playerProduction, scoreContext, scoreCorner, type CornerScore } from './suggestions';
 import type { EdgeId, GameState, HexId, PlayerId, Resource, ResourceCounts, VertexId } from './types';
@@ -10,12 +11,15 @@ import { RESOURCES, emptyResources } from './types';
 
 export type BuildKind = 'city' | 'settlement' | 'devCard' | 'road';
 
-export const COSTS: Record<BuildKind, Partial<ResourceCounts>> = {
-  road: { wood: 1, brick: 1 },
-  settlement: { wood: 1, brick: 1, sheep: 1, wheat: 1 },
-  city: { wheat: 2, ore: 3 },
-  devCard: { sheep: 1, wheat: 1, ore: 1 },
-};
+export const COSTS: Record<BuildKind, Partial<ResourceCounts>> = COST;
+
+/** Who holds Largest Army: most knights played, at least 3, no tie. */
+export function largestArmyHolder(state: GameState): PlayerId | null {
+  const k = state.players.map((p) => ({ id: p.id, n: state.hands[p.id]?.knightsPlayed ?? 0 }));
+  const max = Math.max(0, ...k.map((x) => x.n));
+  const top = k.filter((x) => x.n === max);
+  return max >= 3 && top.length === 1 ? top[0].id : null;
+}
 
 /** Bank trade rate per resource for a player: 4, 3 with a 3:1 harbor, 2 with a matching 2:1. */
 export function tradeRates(state: GameState, player: PlayerId): ResourceCounts {
@@ -257,7 +261,8 @@ const handSize = (state: GameState, p: PlayerId) => {
 export function robberTargets(state: GameState, player: PlayerId, top = 3): RobberTarget[] {
   const topo = topologyFor(state.board.layout);
   const holder = longestRoadHolder(state);
-  const points = (p: PlayerId) => boardPoints(state, p, holder);
+  const army = largestArmyHolder(state);
+  const points = (p: PlayerId) => boardPoints(state, p, holder) + (army === p ? 2 : 0);
   const myPoints = points(player);
   const out: RobberTarget[] = [];
   for (const id of topo.hexes) {
