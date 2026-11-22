@@ -89,3 +89,5 @@
 .form label { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 4px; }
 .form .count { min-width: 28px; text-align: center; font-size: 18px; }
 .form .primary { margin-top: 6px; }
+.steal-picker { display: flex; flex-direction: column; gap: 6px; }
+.steal-picker select { font: inherit; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }

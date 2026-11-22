@@ -1,0 +1,26 @@
+/* Pieces tab. Phone first: chips scroll sideways, tap targets >= 44px. */
+.player-chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px;  margin: -4px; scrollbar-width: none; }
+.player-chips::-webkit-scrollbar { display: none; }
+.player-chip { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; min-width: 104px; text-align: left; }
+.player-chip.on { outline: 3px solid var(--ink); outline-offset: 1px; background: #fff; }
+.player-chip .swatch { width: 16px; height: 16px; }
+.player-chip .name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-chip .vp { margin-left: auto; font-weight: 700; color: var(--accent); }
+.player-chip .left { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tool-icon { font-size: 20px; line-height: 1.2; }
+
+.opening { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; padding: 4px 10px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); }
+.opening.on { background: #fff4d6; border-color: #ecc94b; }
+
+.pieces .piece { cursor: pointer; }
+.selection { display: flex; flex-direction: column; gap: 8px; }
+.selection .close { margin-left: auto; }
+.owners { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.owners .color { width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; border: 2px solid #0003; }
+.owners .color.on { outline: 3px solid var(--ink); outline-offset: 1px; }
+.notice { margin: 0; font-size: 14px; }
+.robber-info p { margin: 0; }
+.robber-info { display: flex; flex-direction: column; gap: 4px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #0004; margin-right: 3px; vertical-align: baseline; }
+.strict { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 40px; }
+.strict input { flex: none; min-height: 0; width: 20px; height: 20px; }
