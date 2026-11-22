@@ -3,20 +3,23 @@
  * expand, and where to put the robber. Pure functions, no React.
  */
 import { pips, portAtVertex, topologyFor } from './board';
+import { COST } from './cards';
+import { boardPoints, checkBuilding, longestRoadHolder, piecesLeft } from './pieces';
 import { isOpenCorner, isResource, playerProduction, scoreContext, scoreCorner, type CornerScore } from './suggestions';
 import type { EdgeId, GameState, HexId, PlayerId, Resource, ResourceCounts, VertexId } from './types';
 import { RESOURCES, emptyResources } from './types';
 
 export type BuildKind = 'city' | 'settlement' | 'devCard' | 'road';
 
-export const COSTS: Record<BuildKind, Partial<ResourceCounts>> = {
-  road: { wood: 1, brick: 1 },
-  settlement: { wood: 1, brick: 1, sheep: 1, wheat: 1 },
-  city: { wheat: 2, ore: 3 },
-  devCard: { sheep: 1, wheat: 1, ore: 1 },
-};
+export const COSTS: Record<BuildKind, Partial<ResourceCounts>> = COST;
 
-const LIMITS = { settlement: 5, city: 4, road: 15 };
+/** Who holds Largest Army: most knights played, at least 3, no tie. */
+export function largestArmyHolder(state: GameState): PlayerId | null {
+  const k = state.players.map((p) => ({ id: p.id, n: state.hands[p.id]?.knightsPlayed ?? 0 }));
+  const max = Math.max(0, ...k.map((x) => x.n));
+  const top = k.filter((x) => x.n === max);
+  return max >= 3 && top.length === 1 ? top[0].id : null;
+}
 
 /** Bank trade rate per resource for a player: 4, 3 with a 3:1 harbor, 2 with a matching 2:1. */
 export function tradeRates(state: GameState, player: PlayerId): ResourceCounts {
@@ -183,8 +186,7 @@ export function buildOptions(state: GameState, player: PlayerId): BuildOption[] 
   const ctx = scoreContext(state, player);
   const mine = Object.entries(state.pieces.buildings).filter(([, b]) => b.player === player);
   const settlements = mine.filter(([, b]) => b.kind === 'settlement');
-  const cities = mine.length - settlements.length;
-  const roadsBuilt = Object.values(state.pieces.roads).filter((p) => p === player).length;
+  const left = piecesLeft(state, player);
   const spots = expansionSpots(state, player, 8);
   const income = playerProduction(state, player);
 
@@ -208,18 +210,18 @@ export function buildOptions(state: GameState, player: PlayerId): BuildOption[] 
     .map(([v]) => ({ v, sc: scoreCorner(state.board, v, { ...ctx, owned: income }) }))
     .sort((a, b) => b.sc.score - a.sc.score)[0];
   if (!bestCity) out.push(option('city', 0, '', undefined, 'No settlement to upgrade yet.'));
-  else if (cities >= LIMITS.city) out.push(option('city', 0, '', undefined, 'All 4 cities are on the board.'));
+  else if (left.city <= 0) out.push(option('city', 0, '', undefined, 'All 4 cities are on the board.'));
   else out.push(option('city', 1 + bestCity.sc.pips * 0.6, `Doubles ${bestCity.sc.pips} pips of production and +1 point.`, bestCity.v));
 
   // Settlement: best spot reachable with no new road.
-  const ready = spots.find((s) => s.roads === 0);
-  if (mine.length - cities >= LIMITS.settlement) out.push(option('settlement', 0, '', undefined, 'All 5 settlements are on the board. Build a city to free one.'));
+  const ready = spots.find((s) => s.roads === 0 && checkBuilding(state, s.vertex, player, 'settlement').length === 0);
+  if (left.settlement <= 0) out.push(option('settlement', 0, '', undefined, 'All 5 settlements are on the board. Build a city to free one.'));
   else if (!ready) out.push(option('settlement', 0, '', undefined, spots.length ? 'No open spot on your roads yet. Build a road first.' : 'No open spot you can reach.'));
   else out.push(option('settlement', 2 + ready.score * 0.6, `New corner with ${ready.pips} pips${ready.newResources.length ? `, adds ${ready.newResources.join(', ')}` : ''} and +1 point.`, ready.vertex));
 
   // Road: toward the best spot that still needs roads.
   const target = spots.find((s) => s.roads > 0 && s.nextRoad);
-  if (roadsBuilt >= LIMITS.road) out.push(option('road', 0, '', undefined, 'All 15 roads are on the board.'));
+  if (left.road <= 0) out.push(option('road', 0, '', undefined, 'All 15 roads are on the board.'));
   else if (!target) out.push(option('road', 0.5, 'Mostly for longest road; no good spot to head for.'));
   else
     out.push(
@@ -249,8 +251,6 @@ export interface RobberTarget {
   stealFrom?: PlayerId;
 }
 
-const points = (state: GameState, p: PlayerId) =>
-  Object.values(state.pieces.buildings).reduce((s, b) => s + (b.player === p ? (b.kind === 'city' ? 2 : 1) : 0), 0);
 
 const handSize = (state: GameState, p: PlayerId) => {
   const h = state.hands[p];
@@ -260,7 +260,10 @@ const handSize = (state: GameState, p: PlayerId) => {
 /** Best hexes to put the robber on, best first. */
 export function robberTargets(state: GameState, player: PlayerId, top = 3): RobberTarget[] {
   const topo = topologyFor(state.board.layout);
-  const myPoints = points(state, player);
+  const holder = longestRoadHolder(state);
+  const army = largestArmyHolder(state);
+  const points = (p: PlayerId) => boardPoints(state, p, holder) + (army === p ? 2 : 0);
+  const myPoints = points(player);
   const out: RobberTarget[] = [];
   for (const id of topo.hexes) {
     const h = state.board.hexes[id];
@@ -278,11 +281,11 @@ export function robberTargets(state: GameState, player: PlayerId, top = 3): Robb
     let score = -selfPips * 1.5;
     const hits: RobberTarget['hits'] = [];
     for (const [op, n] of byPlayer) {
-      const lead = points(state, op) - myPoints;
+      const lead = points(op) - myPoints;
       score += n * (1 + Math.max(-0.3, 0.15 * lead));
       hits.push({ player: op, pips: n });
     }
-    const victims = [...byPlayer.keys()].sort((a, b) => handSize(state, b) - handSize(state, a) || points(state, b) - points(state, a));
+    const victims = [...byPlayer.keys()].sort((a, b) => handSize(state, b) - handSize(state, a) || points(b) - points(a));
     score += Math.min(handSize(state, victims[0]), 7) * 0.3;
     out.push({ hex: id, score, hits: hits.sort((a, b) => b.pips - a.pips), selfPips, stealFrom: victims[0] });
   }

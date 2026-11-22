@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { randomBoard, topologyFor } from './board';
 import { hexCornerIds } from './geometry';
-import { canPlaceSettlement, placementAdvice, placementOrder, rankCorners, scarcityWeights } from './suggestions';
-import { buildOptions, expansionSpots, robberTargets, tradeRates, tradesFor } from './suggestionsPlay';
+import { checkBuilding } from './pieces';
+import { placementAdvice, placementOrder, rankCorners, scarcityWeights } from './suggestions';
+import { buildOptions, expansionSpots, largestArmyHolder, robberTargets, tradeRates, tradesFor } from './suggestionsPlay';
 import { newGame } from '../state/initialState';
 import type { GameState, ResourceCounts } from './types';
 
@@ -50,7 +51,7 @@ describe('placement', () => {
     const ranked = rankCorners(g, g.players[0].id).map((c) => c.vertex);
     expect(ranked).not.toContain(v);
     for (const u of topologyFor('standard').vertices[v].adjacent) expect(ranked).not.toContain(u);
-    expect(canPlaceSettlement(g, v, g.players[0].id, false)).toBe(false);
+    expect(checkBuilding(g, v, g.players[0].id, 'settlement').map((p) => p.code)).toContain('occupied');
   });
 
   it('plans a pair when I pick last in round one', () => {
@@ -143,5 +144,16 @@ describe('during play', () => {
       expect(t.hex).not.toBe(g.robber);
       expect(t.stealFrom).toBe(g.players[1].id);
     }
+  });
+});
+
+describe('largest army', () => {
+  it('needs 3 knights and no tie', () => {
+    const g = game();
+    const [a, b] = g.players.map((p) => p.id);
+    g.hands[a] = { ...g.hands[a], knightsPlayed: 3 };
+    expect(largestArmyHolder(g)).toBe(a);
+    g.hands[b] = { ...g.hands[b], knightsPlayed: 3 };
+    expect(largestArmyHolder(g)).toBeNull();
   });
 });

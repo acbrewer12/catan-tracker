@@ -55,21 +55,15 @@ export function playerProduction(state: GameState, player: PlayerId, ignoreRobbe
   return c;
 }
 
-/** Distance rule: the corner is free and none of its neighbours has a building. */
+/**
+ * Distance rule only: the corner is free and no neighbour has a building.
+ * Used to score hypothetical spots for any player; for a real legality check
+ * use checkBuilding in model/pieces.ts.
+ */
 export function isOpenCorner(state: GameState, v: VertexId): boolean {
   const info = topologyFor(state.board.layout).vertices[v];
   if (!info || state.pieces.buildings[v]) return false;
   return info.adjacent.every((u) => !state.pieces.buildings[u]);
-}
-
-/**
- * Can `player` build a settlement here? Distance rule always; during normal
- * play (needsRoad) it must also touch one of their roads.
- */
-export function canPlaceSettlement(state: GameState, v: VertexId, player: PlayerId, needsRoad: boolean): boolean {
-  if (!isOpenCorner(state, v)) return false;
-  if (!needsRoad) return true;
-  return topologyFor(state.board.layout).vertices[v].edges.some((e) => state.pieces.roads[e] === player);
 }
 
 export interface CornerScore {

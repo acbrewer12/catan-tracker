@@ -9,6 +9,7 @@ import { TERRAIN_STYLE } from '../../components/theme';
 import { topologyFor, validateBoard } from '../../model/board';
 import { hexCenter } from '../../model/geometry';
 import { isResource, placementAdvice, placementOrder, vertexProduction } from '../../model/suggestions';
+import { openingTurn } from '../../model/pieces';
 import { buildOptions, expansionSpots, robberTargets, tradeRates, type BuildKind, type Trade } from '../../model/suggestionsPlay';
 import { RESOURCES, type EdgeId, type GameState, type HexId, type PlayerId, type Resource, type ResourceCounts, type VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
@@ -157,7 +158,8 @@ function StartTips({ state, me }: { state: GameState; me: PlayerId }) {
     return <p className="hint">All starting settlements are placed. Switch to Next move for in-game tips.</p>;
   if (!advice.myPicks.length) return <p className="hint">You've placed both starting settlements. Switch to Next move.</p>;
 
-  const myTurn = advice.picksBeforeMine === 0;
+  const turn = openingTurn(state);
+  const myTurn = advice.picksBeforeMine === 0 && (!turn || (turn.player === me && turn.place === 'settlement'));
   const second = advice.myPicks[0] >= state.players.length;
   let status: ReactNode;
   if (myTurn) status = <><b>Your pick</b> ({second ? 'second' : 'first'} settlement).</>;
