@@ -89,7 +89,7 @@ Existing actions:
 | --- | --- |
 | `board` | `setLayout`, `setTerrain`, `setNumber`, `setPort`, `clear`, `randomize`, `replace` |
 | `players` | `add`, `remove`, `rename`, `setColor`, `setMe`, `move` |
-| `pieces` / `robber` | `pieces/setBuilding`, `pieces/removeBuilding`, `pieces/setRoad`, `pieces/removeRoad`, `robber/move` (baseline, no rule checks yet) |
+| `pieces` / `robber` | `pieces/setBuilding`, `pieces/removeBuilding`, `pieces/moveBuilding`, `pieces/setRoad`, `pieces/removeRoad`, `pieces/moveRoad`, `robber/move`. Moves are corrections, not builds. Rule checks, piece limits, longest road and robber helpers are in `model/pieces.ts` |
 | `dice` / `hands` | `dice/add`, `dice/removeLast`, `hands/set` (baseline) |
 | `game` | `setPhase`, `new`, `load` |
 

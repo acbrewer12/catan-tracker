@@ -43,13 +43,12 @@ export function piecesLeft(s: GameState, player: PlayerId): PieceCounts {
 }
 
 /**
- * Still in the opening "place 2 settlements + 2 roads" round for this player.
- * During it a settlement doesn't need a road, and a road must touch the
- * settlement just placed (we accept any own settlement).
+ * The player's first two settlements (the opening round) don't need a road.
+ * Opening roads must touch one of their buildings, which checkRoad covers.
  */
 export function inOpeningRound(s: GameState, player: PlayerId): boolean {
   const c = pieceCounts(s, player);
-  return c.settlement + c.city < 2 || (c.road < 2 && c.settlement + c.city <= 2);
+  return c.settlement + c.city < 2;
 }
 
 /** Can `player` put a `kind` on corner `vertex`? Empty list = yes. `ignore` lets a move skip the piece being moved. */

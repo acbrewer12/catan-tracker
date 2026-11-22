@@ -35,7 +35,10 @@ export function playersReducer(s: GameState, a: PlayersAction): GameState {
       if (!players.some((p) => p.isMe)) players[0] = { ...players[0], isMe: true };
       const hands = { ...s.hands };
       delete hands[a.id];
-      return { ...s, players, hands };
+      // Their pieces leave the board with them.
+      const buildings = Object.fromEntries(Object.entries(s.pieces.buildings).filter(([, b]) => b.player !== a.id));
+      const roads = Object.fromEntries(Object.entries(s.pieces.roads).filter(([, p]) => p !== a.id));
+      return { ...s, players, hands, pieces: { ...s.pieces, buildings, roads } };
     }
     case 'players/rename':
       return { ...s, players: s.players.map((p) => (p.id === a.id ? { ...p, name: a.name } : p)) };
