@@ -11,12 +11,13 @@
  * matching click targets are drawn on top. `vertexFilter` / `edgeFilter` limit
  * which targets are shown (e.g. only legal settlement spots).
  */
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { pips, topologyFor } from '../model/board';
 import { hexCenter, type EdgeInfo, type VertexInfo } from '../model/geometry';
 import type { Board, EdgeId, HexId, VertexId } from '../model/types';
 import { SEA, TERRAIN_STYLE } from './theme';
 import { useBoardRotation } from './boardRotation';
+import { useBoardTwist } from './useBoardTwist';
 
 export const S = 100;
 
@@ -53,25 +54,37 @@ export function HexBoard(props: HexBoardProps) {
   const verts = Object.values(topo.vertices);
   const xs = verts.map((v) => v.x);
   const ys = verts.map((v) => v.y);
-  const { deg, steps, rotate } = useBoardRotation();
+  const { deg: savedDeg } = useBoardRotation();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const { liveDeg, handleProps } = useBoardTwist(wrapRef, savedDeg);
+  const turning = liveDeg !== null;
+  const deg = liveDeg ?? savedDeg;
   // Rotate about the middle of the board, then fit the view to the turned shape.
   const cx = ((Math.min(...xs) + Math.max(...xs)) / 2) * S;
   const cy = ((Math.min(...ys) + Math.max(...ys)) / 2) * S;
   const rad = (deg * Math.PI) / 180;
-  const turned = verts.map((v) => {
-    const dx = v.x * S - cx;
-    const dy = v.y * S - cy;
-    return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
-  });
   const pad = 0.75 * S;
-  const minX = Math.min(...turned.map((p) => p.x)) - pad;
-  const minY = Math.min(...turned.map((p) => p.y)) - pad;
-  const w = Math.max(...turned.map((p) => p.x)) - minX + pad;
-  const h = Math.max(...turned.map((p) => p.y)) - minY + pad;
+  let minX: number, minY: number, w: number, h: number;
+  if (turning) {
+    // Mid-turn: a fixed square that fits every angle, so the board doesn't jump in size.
+    const r = Math.max(...verts.map((v) => Math.hypot(v.x * S - cx, v.y * S - cy))) + pad;
+    [minX, minY, w, h] = [cx - r, cy - r, r * 2, r * 2];
+  } else {
+    // At rest: fit the view tightly to the turned shape.
+    const turned = verts.map((v) => {
+      const dx = v.x * S - cx;
+      const dy = v.y * S - cy;
+      return { x: cx + dx * Math.cos(rad) - dy * Math.sin(rad), y: cy + dx * Math.sin(rad) + dy * Math.cos(rad) };
+    });
+    minX = Math.min(...turned.map((p) => p.x)) - pad;
+    minY = Math.min(...turned.map((p) => p.y)) - pad;
+    w = Math.max(...turned.map((p) => p.x)) - minX + pad;
+    h = Math.max(...turned.map((p) => p.y)) - minY + pad;
+  }
   const upright = `rotate(${-deg})`;
 
   return (
-    <div className="hex-board-wrap">
+    <div className={`hex-board-wrap${turning ? ' turning' : ''}`} ref={wrapRef}>
     <svg className={props.className ?? 'hex-board'} viewBox={`${minX} ${minY} ${w} ${h}`} role="img" aria-label="Game board">
       <rect x={minX} y={minY} width={w} height={h} rx={40} fill={SEA} />
       <g transform={`rotate(${deg} ${cx} ${cy})`}>
@@ -192,8 +205,13 @@ export function HexBoard(props: HexBoardProps) {
       </g>
     </svg>
     {props.rotatable !== false && (
-      <button className="rotate-btn" onClick={rotate} aria-label="Turn the board to match your seat" title="Turn the board to match your seat">
-        ⟳{steps ? <small>{deg}°</small> : null}
+      <button
+        className="rotate-btn"
+        {...handleProps}
+        aria-label="Turn the board: drag this around the board, or twist with two fingers"
+        title="Drag around the board (or twist with two fingers) to turn it"
+      >
+        ⟳{deg ? <small>{Math.round(deg)}°</small> : null}
       </button>
     )}
     </div>

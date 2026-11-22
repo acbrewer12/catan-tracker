@@ -1,34 +1,42 @@
 /**
  * How far the board picture is turned so it matches what the user sees from
  * their seat. View-only: game data never changes. Saved per device and shared
- * by every <HexBoard> on every tab.
+ * by every <HexBoard> on every tab. The user turns it by dragging (see
+ * useBoardTwist.ts); it settles on the nearest SNAP degrees when let go.
  *
  * Drawing on the board? Text and piece shapes inside a rotated board should be
  * turned back upright: add `rotate(${-deg})` after your translate, e.g.
  *   const { deg } = useBoardRotation();
  *   <g transform={`translate(${x} ${y}) rotate(${-deg})`}>…</g>
+ * While a drag is in progress HexBoard draws with the live angle; children that
+ * use useBoardRotation() catch up on release, which is fine for upright labels.
  */
 import { useSyncExternalStore } from 'react';
 
-const KEY = 'catan-tracker:rotation';
+export const SNAP = 30;
+const KEY = 'catan-tracker:rotation-deg';
 const listeners = new Set<() => void>();
+
+export const normalizeDeg = (d: number) => ((d % 360) + 360) % 360;
+export const snapDeg = (d: number) => normalizeDeg(Math.round(d / SNAP) * SNAP);
 
 function read(): number {
   try {
     const n = Number(localStorage.getItem(KEY));
-    return Number.isInteger(n) && n >= 0 && n < 6 ? n : 0;
+    return Number.isFinite(n) ? snapDeg(n) : 0;
   } catch {
     return 0;
   }
 }
 
-let steps = read();
-const getSteps = () => steps;
+let current = read();
+const get = () => current;
 
-export function setRotationSteps(n: number) {
-  steps = ((n % 6) + 6) % 6;
+/** Save a new angle (snapped). */
+export function setRotation(deg: number) {
+  current = snapDeg(deg);
   try {
-    localStorage.setItem(KEY, String(steps));
+    localStorage.setItem(KEY, String(current));
   } catch {
     /* fine: rotation just won't be remembered */
   }
@@ -40,14 +48,8 @@ function subscribe(l: () => void) {
   return () => listeners.delete(l);
 }
 
-/** steps: 0-5 sixty-degree turns clockwise. deg: steps × 60. */
+/** deg: saved angle, clockwise, a multiple of SNAP in [0, 360). */
 export function useBoardRotation() {
-  const s = useSyncExternalStore(subscribe, getSteps, getSteps);
-  return {
-    steps: s,
-    deg: s * 60,
-    rotate: () => setRotationSteps(s + 1),
-    rotateBack: () => setRotationSteps(s - 1),
-    reset: () => setRotationSteps(0),
-  };
+  const deg = useSyncExternalStore(subscribe, get, get);
+  return { deg, setRotation, reset: () => setRotation(0) };
 }

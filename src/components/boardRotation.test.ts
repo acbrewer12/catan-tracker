@@ -1,21 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { createElement } from 'react';
-import { setRotationSteps } from './boardRotation';
+import { setRotation, snapDeg } from './boardRotation';
 import { HexBoard } from './HexBoard';
 import { randomBoard } from '../model/board';
 
 describe('board rotation', () => {
-  it('wraps around in 60° steps and turns the board, not the data', () => {
+  it('snaps to 30° steps and wraps around', () => {
+    expect(snapDeg(14)).toBe(0);
+    expect(snapDeg(16)).toBe(30);
+    expect(snapDeg(-20)).toBe(330);
+    expect(snapDeg(400)).toBe(30);
+  });
+  it('turns the picture, not the game data', () => {
     const board = randomBoard('standard');
     const before = JSON.stringify(board);
-    setRotationSteps(7);
+    setRotation(62);
     const html = renderToString(createElement(HexBoard, { board }));
     expect(html).toContain('rotate(60 ');
     expect(html).toContain('rotate(-60)');
-    setRotationSteps(-1);
-    expect(renderToString(createElement(HexBoard, { board }))).toContain('rotate(300 ');
-    setRotationSteps(0);
+    setRotation(0);
     expect(JSON.stringify(board)).toBe(before);
   });
 });

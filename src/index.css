@@ -90,4 +90,6 @@ small.over { color: var(--error); font-weight: 700; }
   border-radius: 22px; background: #fffdf8e6; font-size: 22px; line-height: 1; display: flex; align-items: center; gap: 4px;
   box-shadow: 0 1px 4px #0003;
 }
+.rotate-btn { touch-action: none; cursor: grab; }
+.hex-board-wrap.turning .rotate-btn { cursor: grabbing; background: var(--ink); color: #fff; }
 .rotate-btn small { font-size: 12px; font-weight: 600; }
