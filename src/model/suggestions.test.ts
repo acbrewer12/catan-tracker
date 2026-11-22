@@ -128,7 +128,7 @@ describe('during play', () => {
   it('suggests a city when I hold the cards', () => {
     const g = played();
     const me = g.players[0].id;
-    g.hands[me] = { resources: res({ wheat: 2, ore: 3 }), unknown: 0, devCards: 0 };
+    g.hands[me] = { resources: res({ wheat: 2, ore: 3 }), unknown: 0, devCards: 0, knightsPlayed: 0 };
     const opts = buildOptions(g, me);
     expect(opts[0].kind).toBe('city');
     expect(opts[0].status).toBe('now');

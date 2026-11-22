@@ -1,5 +1,5 @@
 /** Whole-game actions: phase changes, new game, import. */
-import type { GameState, Phase } from '../../model/types';
+import { emptyHand, type GameState, type Phase } from '../../model/types';
 import { newGame } from '../initialState';
 
 export type GameAction =
@@ -19,7 +19,7 @@ export function gameReducer(s: GameState, a: GameAction): GameState {
       }
       if (a.keepPlayers) {
         fresh.players = s.players;
-        fresh.hands = Object.fromEntries(s.players.map((p) => [p.id, fresh.hands[p.id] ?? { resources: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 }, unknown: 0, devCards: 0 }]));
+        fresh.hands = Object.fromEntries(s.players.map((p) => [p.id, fresh.hands[p.id] ?? emptyHand()]));
       }
       return fresh;
     }
