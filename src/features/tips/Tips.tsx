@@ -5,6 +5,7 @@
  */
 import { useMemo, useState, type ReactNode } from 'react';
 import { HexBoard, S } from '../../components/HexBoard';
+import { useBoardRotation } from '../../components/boardRotation';
 import { TERRAIN_STYLE } from '../../components/theme';
 import { topologyFor, validateBoard } from '../../model/board';
 import { hexCenter } from '../../model/geometry';
@@ -57,6 +58,7 @@ function Overlay({ state, ranked, focus, gone }: { state: GameState; ranked: Ver
   const topo = topologyFor(state.board.layout);
   const sel = new Set(focus.vertices ?? []);
   const color = (id: PlayerId) => state.players.find((p) => p.id === id)?.color ?? '#888';
+  const { deg } = useBoardRotation();
   return (
     <g pointerEvents="none">
       {/* Placed pieces, simply drawn so the tips make sense on their own. */}
@@ -97,7 +99,7 @@ function Overlay({ state, ranked, focus, gone }: { state: GameState; ranked: Ver
         const p = topo.vertices[v];
         const on = sel.has(v);
         return (
-          <g key={v} transform={`translate(${p.x * S} ${p.y * S})`}>
+          <g key={v} transform={`translate(${p.x * S} ${p.y * S}) rotate(${-deg})`}>
             <circle r={on ? 30 : 22} fill={on ? '#111' : '#fffdf8'} stroke="#111" strokeWidth={4} />
             <text textAnchor="middle" dominantBaseline="middle" y={1} fontSize={on ? 28 : 22} fontWeight={800} fill={on ? '#fff' : '#111'}>
               {i + 1}
