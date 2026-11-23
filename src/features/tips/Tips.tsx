@@ -14,7 +14,9 @@ import { openingTurn } from '../../model/pieces';
 import { buildOptions, expansionSpots, robberTargets, tradeRates, type BuildKind, type Trade } from '../../model/suggestionsPlay';
 import { RESOURCES, type EdgeId, type GameState, type HexId, type PlayerId, type Resource, type ResourceCounts, type VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
-import { makePlan, type Goal, type PlanStep } from '../../model/plan';
+import { makePlan, type Goal, type Plan, type PlanStep, type Threat } from '../../model/plan';
+import { WIN_POINTS, type PlayerOutlook, type Purchase, type StrategyId } from '../../model/strategy';
+import { DEV_DECK } from '../../model/cards';
 import './tips.css';
 
 type View = 'start' | 'play';
@@ -216,25 +218,55 @@ function StartTips({ state, me }: { state: GameState; me: PlayerId }) {
 
 
 const WHEN_LABEL = { now: 'This turn', next: 'Next', later: 'After that', if7: 'On a 7' } as const;
+const STRATEGY_LABEL: Record<StrategyId, string> = { cities: 'Cities first', expand: 'Expand first', devCards: 'Dev cards and Largest Army', longestRoad: 'Longest Road' };
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const num = (x: number) => (Math.round(x * 10) / 10).toString();
 
 function goalText(state: GameState, g: Goal): string {
   const at = g.where ? cornerLabel(state, g.where) : '';
   if (g.item === 'city') return `City on ${at}`;
   if (g.item === 'settlement') return `Settlement on ${at}${g.roads ? ` (${g.roads} road${g.roads > 1 ? 's' : ''} first)` : ''}`;
+  if (g.item === 'road') return 'Roads for Longest Road';
   return 'A dev card';
 }
 
-function goalWhy(g: Goal): string {
-  if (g.item === 'city') return `+1 point and doubles ${g.pips} pips.`;
-  if (g.item === 'settlement')
-    return `+1 point and ${g.pips} more pips${g.newResources.length ? `, adds ${g.newResources.join(', ')}` : ''}.${g.contested ? ' An opponent can reach it as fast, so go first.' : ''}`;
-  return 'Knight to move the robber, a progress card, or a hidden point.';
+function buyText(state: GameState, b: Purchase): string {
+  if (b.item === 'city') return `City on ${cornerLabel(state, b.where!)}`;
+  if (b.item === 'settlement') return `Settlement on ${cornerLabel(state, b.where!)}${b.roads ? ` (+${b.roads} road${b.roads > 1 ? 's' : ''})` : ''}`;
+  if (b.item === 'road') return 'Another road (Longest Road)';
+  return 'A dev card';
 }
 
-const roundsText = (n: number) => (n >= 99 ? 'not soon at your current income' : n <= 1 ? 'about 1 round' : `about ${n} rounds`);
+function devOdds(state: GameState, o: PlayerOutlook | null): string {
+  const deck = DEV_DECK[state.board.layout];
+  const size = Object.values(deck).reduce((x, y) => x + y, 0);
+  const army = o && o.knightsForArmy > 0 ? ` You need ${o.knightsForArmy} more knight${o.knightsForArmy > 1 ? 's' : ''} for Largest Army.` : '';
+  return `${pct(deck.victoryPoint / size)} chance of a hidden point, ${pct(deck.knight / size)} a knight.${army}`;
+}
 
-function stepView(state: GameState, s: PlanStep, name: (id?: PlayerId) => string): { title: ReactNode; why?: string; focus: Focus } {
+function stepView(state: GameState, plan: Plan, s: PlanStep, name: (id?: PlayerId) => string): { title: ReactNode; why?: string; focus: Focus } {
+  const n = Math.max(2, state.players.length);
   switch (s.kind) {
+    case 'playDev': {
+      if (s.card === 'knight' && s.why === 'robberOnYou') {
+        const h = state.board.hexes[s.hex!];
+        return { title: 'Play a Knight before you roll', why: `The robber is blocking your ${isResource(h.terrain) ? icon(h.terrain) : ''}${h.number}. Move it to an opponent (see "On a 7") and steal a card.`, focus: { hex: s.hex } };
+      }
+      if (s.card === 'knight') return { title: 'Play a Knight', why: `That takes Largest Army: +2 points.`, focus: {} };
+      if (s.card === 'roadBuilding') return { title: 'Play Road Building', why: `2 free roads toward your goal, saving 2 ${icon('wood')} and 2 ${icon('brick')}.`, focus: {} };
+      if (s.card === 'yearOfPlenty')
+        return {
+          title: (
+            <>
+              Play Year of Plenty: take <Cards counts={s.take ?? {}} />
+            </>
+          ),
+          why: 'Those are the cards you are missing, so you can build right after.',
+          focus: {},
+        };
+      return { title: `Play Monopoly on ${icon(s.resource!)}`, why: `Opponents hold about ${s.haul} ${icon(s.resource!)} between them, more than you need.`, focus: {} };
+    }
     case 'trade':
       return {
         title: `Trade ${s.trade.count} ${icon(s.trade.give)} for ${s.trade.count / { bank: 4, '3:1': 3, '2:1': 2 }[s.rate]} ${icon(s.trade.get)} (${s.rate === 'bank' ? 'bank 4:1' : `${s.rate} harbor`})`,
@@ -242,10 +274,15 @@ function stepView(state: GameState, s: PlanStep, name: (id?: PlayerId) => string
       };
     case 'build': {
       const focus: Focus = s.item === 'road' ? { edges: s.where ? [s.where] : [] } : s.where ? { vertices: [s.where] } : {};
-      if (s.item === 'road') return { title: `Build ${s.count && s.count > 1 ? `${s.count} roads` : 'a road'} here`, why: s.count && s.count > 1 ? 'Start at the dotted edge.' : undefined, focus };
-      if (s.item === 'city') return { title: `Upgrade ${cornerLabel(state, s.where!)} to a city`, focus };
-      if (s.item === 'settlement') return { title: `Build a settlement on ${cornerLabel(state, s.where!)}`, focus };
-      return { title: 'Buy a dev card', focus };
+      if (s.item === 'road') {
+        if (plan.goal?.item === 'road') return { title: 'Build a road here', why: `Longest Road needs ${plan.outlook?.roadsForLongest ?? '?'} more road${(plan.outlook?.roadsForLongest ?? 0) > 1 ? 's' : ''} in a row (+2 points).`, focus };
+        return { title: `Build ${s.count && s.count > 1 ? `${s.count} roads` : 'a road'} here`, why: s.count && s.count > 1 ? 'Start at the dotted edge.' : undefined, focus };
+      }
+      const pipsWhy = s.pips ? `, +${s.pips} pips (about ${num((s.pips * n) / 36)} more cards per round)` : '';
+      if (s.item === 'city') return { title: `Upgrade ${cornerLabel(state, s.where!)} to a city`, why: `+1 point${pipsWhy}.`, focus };
+      if (s.item === 'settlement')
+        return { title: `Build a settlement on ${cornerLabel(state, s.where!)}`, why: `+1 point${pipsWhy}${s.newResources?.length ? `, adds ${s.newResources.map(icon).join(' ')}` : ''}.`, focus };
+      return { title: 'Buy a dev card', why: devOdds(state, plan.outlook), focus };
     }
     case 'save':
       return {
@@ -254,23 +291,23 @@ function stepView(state: GameState, s: PlanStep, name: (id?: PlayerId) => string
             Save up: still need <Cards counts={s.need} />
           </>
         ),
-        why: `Ready in ${roundsText(s.eta)} at your income, counting bank trades.`,
+        why: `${pct(s.odds.byTurn[1] ?? 0)} chance you have it by your next turn, ${pct(s.odds.byTurn[2] ?? 0)} within 2 turns, ${s.odds.median < 99 ? `and usually within ${s.odds.median} turn${s.odds.median > 1 ? 's' : ''}` : 'and likely more than 8 turns without trading with players'} (simulated dice, 7s and bank trades included).`,
         focus: {},
       };
     case 'ask':
       return {
-        title: (
-          <>
-            Offer <Cards counts={s.offer} /> to other players for <Cards counts={s.want} />
-          </>
-        ),
-        why: 'A 1-for-1 player trade beats the bank. Skip it if the trade would help the leader.',
+        title: `Ask ${name(s.partner)} for 1 ${icon(s.get)}${s.give ? `, offer 1 ${icon(s.give)}` : ''}`,
+        why: `${s.sure ? `They definitely hold ${icon(s.get)}` : `They probably hold about ${s.theyHave} ${icon(s.get)}`}${s.give ? `, and they're short of ${icon(s.give)}` : ''}. A 1-for-1 trade beats the bank's 4-for-1.`,
         focus: {},
       };
     case 'tooMany':
-      return { title: `You hold ${s.cards} cards`, why: `A 7 would cost you ${Math.floor(s.cards / 2)}. Trade or build something to get to 7 or fewer.`, focus: {} };
+      return { title: `You hold ${s.cards} cards`, why: `${pct(s.risk)} chance of a 7 before your next turn, which would cost you ${Math.floor(s.cards / 2)}. Build or trade down to 7.`, focus: {} };
     case 'then':
-      return { title: goalText(state, s.goal), why: `${goalWhy(s.goal)} Ready in ${roundsText(s.goal.eta)}.`, focus: s.goal.where ? { vertices: [s.goal.where] } : {} };
+      return {
+        title: buyText(state, s.buy),
+        why: `In about ${s.buy.round} round${s.buy.round === 1 ? '' : 's'}, putting you at about ${num(s.buy.points)} points.`,
+        focus: s.buy.where ? { vertices: [s.buy.where] } : {},
+      };
     case 'robber': {
       const h = state.board.hexes[s.target.hex];
       return {
@@ -282,18 +319,53 @@ function stepView(state: GameState, s: PlanStep, name: (id?: PlayerId) => string
   }
 }
 
+function threatView(state: GameState, t: Threat, name: (id?: PlayerId) => string): { text: string; focus: Focus } {
+  switch (t.kind) {
+    case 'nearWin':
+      return { text: `${name(t.player)} has ${t.points} points${t.devCards ? ` and ${t.devCards} dev card${t.devCards > 1 ? 's' : ''} (maybe hidden points)` : ''}. Don't trade with them, and rob them.`, focus: {} };
+    case 'race':
+      return { text: `${name(t.player)} is close to ${cornerLabel(state, t.where)}. Get there first.`, focus: { vertices: [t.where] } };
+    case 'longestRoad':
+      return {
+        text: t.holds
+          ? `${name(t.player)} holds Longest Road (${t.length}). You'd need ${t.length + 1} in a row (you have ${t.mine}).`
+          : `${name(t.player)}'s road is ${t.length} long (yours: ${t.mine}). At 5 they take Longest Road (+2).`,
+        focus: {},
+      };
+    case 'largestArmy':
+      return {
+        text: t.holds
+          ? `${name(t.player)} holds Largest Army (${t.knights} knights; you've played ${t.mine}).`
+          : `${name(t.player)} has played ${t.knights} knights (you: ${t.mine}). At 3 they take Largest Army (+2).`,
+        focus: {},
+      };
+  }
+}
+
 function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: PlayerId; focus: Focus; setFocus: (f: Focus) => void }) {
   const plan = useMemo(() => makePlan(state, me), [state, me]);
   const name = (id?: PlayerId) => state.players.find((p) => p.id === id)?.name ?? '?';
   if (!plan.goal) return null;
+  const o = plan.outlook;
+  const st = plan.strategy;
+  const n = Math.max(2, state.players.length);
   let lastWhen = '';
   return (
     <section className="tip-section plan">
       <h2>Your plan: {goalText(state, plan.goal)}</h2>
-      <p className="hint small">{goalWhy(plan.goal)}</p>
+      {st && o && (
+        <p className="hint small">
+          <b>{STRATEGY_LABEL[st.id]}.</b>{' '}
+          {st.rounds <= 40
+            ? `About ${st.rounds} rounds to ${WIN_POINTS} points`
+            : `${WIN_POINTS} points is a long way off; this path gets you about ${num(st.pointsAt10)} points in 10 rounds`}{' '}
+          (you have {o.points}
+          {o.hiddenPoints ? `, ${o.hiddenPoints} hidden` : ''}).
+        </p>
+      )}
       <ol className="plan-steps">
         {plan.steps.map((s, i) => {
-          const v = stepView(state, s, name);
+          const v = stepView(state, plan, s, name);
           const head = s.when !== lastWhen ? WHEN_LABEL[s.when] : null;
           lastWhen = s.when;
           const on = JSON.stringify(v.focus) === JSON.stringify(focus) && Object.keys(v.focus).length > 0;
@@ -311,6 +383,50 @@ function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: Player
           );
         })}
       </ol>
+      {plan.threats.length > 0 && (
+        <>
+          <div className="when threat">Watch out</div>
+          <ul className="threats">
+            {plan.threats.map((t, i) => {
+              const v = threatView(state, t, name);
+              return (
+                <li key={i}>
+                  <button className="tip-card threat" onClick={() => setFocus(v.focus)}>
+                    <span className="why">⚠️ {v.text}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      {o && plan.strategies.length > 1 && (
+        <details className="why-plan">
+          <summary>Why this plan</summary>
+          <table>
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Rounds to {WIN_POINTS}</th>
+                <th>Points in 10 rounds</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.strategies.map((r) => (
+                <tr key={r.id} className={r === st ? 'on' : ''}>
+                  <td>{STRATEGY_LABEL[r.id]}</td>
+                  <td>{r.rounds <= 40 ? `~${r.rounds}` : '40+'}</td>
+                  <td>{num(Math.min(r.pointsAt10, WIN_POINTS))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="hint small">
+            Each strategy is played out on your expected income ({RESOURCES.map((r) => `${icon(r)} ${num((o.income[r] * n) / 36)}`).join('  ')} cards per round), with
+            bank and harbor trades. Settlement spots an opponent can reach first drop out after a couple of rounds.
+          </p>
+        </details>
+      )}
     </section>
   );
 }
