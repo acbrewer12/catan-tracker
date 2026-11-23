@@ -452,6 +452,12 @@ function GameReviewView({ game, winner, live, onBack }: { game: GameState; winne
           </li>
           <li>Cards lost to 7s: {review.stats.cardsLostToSevens}; turns ended with 8+ cards: {review.stats.bigHandTurns}</li>
           <li>Cards stolen from you: {review.stats.cardsStolenFromMe}</li>
+          {review.stats.robberMoves > 0 && (
+            <li>
+              Your robber moves: {review.stats.robberMoves} ({review.stats.weakRobberMoves} with a clearly better spot)
+            </li>
+          )}
+          {game.robberMoves?.length ? <li>Rolls that the robber blocked on your tiles: {review.stats.rollsBlocked}</li> : null}
           <li>
             Player trades: {review.stats.playerTrades} ({review.stats.badTrades} not in your favour)
           </li>
@@ -459,7 +465,7 @@ function GameReviewView({ game, winner, live, onBack }: { game: GameState; winne
             Dev cards: bought {review.stats.devBought}, played {review.stats.devPlayed}
           </li>
         </ul>
-        <p className="hint small">Judged with the same planner as the Tips tab, using the board as it was at each moment. The robber's past position isn't recorded, so it's left out.</p>
+        <p className="hint small">Judged with the same planner as the Tips tab, using the board as it was at each moment.{game.robberMoves?.length ? '' : " This game was saved before robber moves were recorded, so they're left out."}</p>
       </details>
     </div>
   );
