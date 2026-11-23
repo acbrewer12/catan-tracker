@@ -55,6 +55,9 @@ export function piecesReducer(s: GameState, a: PiecesAction): GameState {
       return { ...s, pieces: { ...s.pieces, roads: next } };
     }
     case 'robber/move':
-      return s.board.hexes[a.hex] && s.robber !== a.hex ? { ...s, robber: a.hex } : s;
+      // Logged with the time so the review can tell who moved it and where it sat.
+      return s.board.hexes[a.hex] && s.robber !== a.hex
+        ? { ...s, robber: a.hex, robberMoves: [...(s.robberMoves ?? []), { hex: a.hex, at: Date.now(), rolls: s.diceHistory.length, events: s.cardLog.length }] }
+        : s;
   }
 }

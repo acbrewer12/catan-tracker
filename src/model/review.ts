@@ -9,16 +9,16 @@
  * public information (points on the board, trades made at the table, who
  * robbed whom); their hidden cards are never shown or assumed.
  */
-import { hexesAtVertex, pips, portAtVertex } from './board';
+import { desertHex, hexesAtVertex, pips, portAtVertex, topologyFor } from './board';
 import { countTotal, handEstimates } from './cards';
-import { openingEnd, stateAt, turnsOf, type TurnInfo } from './history';
+import { openingEnd, piecesFrom, robberAt, stateAt, turnsOf, type TurnInfo } from './history';
 import { longestRoadHolder, pieceCounts } from './pieces';
 import { makePlan } from './plan';
 import { WIN_POINTS, type StrategyId } from './strategy';
 import { isResource, rankCorners, vertexProduction } from './suggestions';
-import { largestArmyHolder, tradeRates } from './suggestionsPlay';
+import { largestArmyHolder, robberTargets, tradeRates } from './suggestionsPlay';
 import { evaluateTrade, visiblePoints } from './tradeValue';
-import type { CardEvent, GameState, PlayerId, ResourceCounts, VertexId } from './types';
+import type { CardEvent, GameState, HexId, PlayerId, ResourceCounts, VertexId } from './types';
 import { RESOURCES } from './types';
 
 export type Tone = 'good' | 'tip' | 'mistake';
@@ -57,6 +57,11 @@ export interface ReviewStats {
   /** Turns you ended holding more than 7 cards. */
   bigHandTurns: number;
   cardsStolenFromMe: number;
+  /** Rolls made while the robber sat on one of your tiles (0 for games without robber moves logged). */
+  rollsBlocked: number;
+  /** Your robber moves, and how many had a clearly better spot. */
+  robberMoves: number;
+  weakRobberMoves: number;
   playerTrades: number;
   badTrades: number;
   devBought: number;
@@ -209,6 +214,9 @@ export function reviewGame(game: GameState, recordedWinner?: PlayerId | null, op
     cardsLostToSevens: 0,
     bigHandTurns: 0,
     cardsStolenFromMe: 0,
+    rollsBlocked: 0,
+    robberMoves: 0,
+    weakRobberMoves: 0,
     playerTrades: 0,
     badTrades: 0,
     devBought: 0,
@@ -354,6 +362,58 @@ export function reviewGame(game: GameState, recordedWinner?: PlayerId | null, op
     if (e.kind === 'playDev' && e.player === me) stats.devPlayed++;
   });
 
+  // --- Robber moves (logged since the robber started recording its moves) --
+  const topo = topologyFor(game.board.layout);
+  const moves = game.robberMoves ?? [];
+  const hexText = (h: HexId) => {
+    const x = game.board.hexes[h];
+    return x && isResource(x.terrain) ? `${x.number} ${NAMES[x.terrain]}` : 'the desert';
+  };
+  moves.forEach((mv, k) => {
+    const t = mv.rolls !== undefined ? turns[mv.rolls - 1] : [...turns].reverse().find((x) => x.roll.at <= mv.at);
+    if (!t) return;
+    const upto = mv.events ?? game.cardLog.findIndex((e) => e.at >= mv.at);
+    const idx = upto < 0 ? game.cardLog.length : upto;
+    // A knight played since the turn began moved it; otherwise the player who rolled the 7.
+    const knight = game.cardLog
+      .slice(t.start, idx)
+      .filter((e) => e.kind === 'playDev' && e.card === 'knight')
+      .pop();
+    const mover = knight && knight.kind === 'playDev' ? knight.player : t.player;
+    if (mover !== me) return;
+    stats.robberMoves++;
+    const before = { ...stateAt(game, idx, t.index + 1), robber: k > 0 ? moves[k - 1].hex : desertHex(game.board) };
+    const targets = robberTargets(before, me, 99);
+    const best = targets[0];
+    const mine = targets.find((x) => x.hex === mv.hex);
+    const turn = t.index + 1;
+    const hitText = (hits: Array<{ player: PlayerId }>) => hits.map((h) => `${name(h.player)} (${visiblePoints(before, h.player)} points)`).join(' and ');
+    if (!best) return;
+    if (mine && (mine === best || best.score - mine.score < 1)) {
+      moments.push({ turn, round: t.round, topic: 'robber', tone: 'good', title: `Turn ${turn}: robber on ${hexText(mv.hex)}, blocking ${hitText(mine.hits)}.`, weight: 0 });
+      return;
+    }
+    stats.weakRobberMoves++;
+    const gap = mine ? best.score - mine.score : 3;
+    const selfHit = mine ? mine.selfPips > 0 : Object.entries(before.pieces.buildings).some(([v, b]) => b.player === me && topo.vertices[v]?.hexes.includes(mv.hex));
+    moments.push({
+      turn,
+      round: t.round,
+      topic: 'robber',
+      tone: gap >= 3 ? 'mistake' : 'tip',
+      title: `Turn ${turn}: you put the robber on ${hexText(mv.hex)}${mine ? `, blocking ${hitText(mine.hits)}` : ', where it blocked no opponent'}. ${hexText(best.hex)} was better.`,
+      detail: `${hexText(best.hex)} would have blocked ${hitText(best.hits)}.${selfHit ? ' Your spot also blocked your own tile.' : ''}`,
+      weight: 1 + Math.min(2, gap * 0.5),
+    });
+  });
+  if (moves.length)
+    for (const t of turns) {
+      const hex = robberAt(game, t.start);
+      if (!hex) continue;
+      const pieces = piecesFrom(game.cardLog, t.start);
+      if (Object.entries(pieces.buildings).some(([v, b]) => b.player === me && topo.vertices[v]?.hexes.includes(hex) && game.board.hexes[hex]?.number === t.roll.total)) stats.rollsBlocked++;
+    }
+
   // --- Turn by turn: missed builds and big hands ---------------------------
   for (const t of turns) {
     if (t.player !== me) continue;
@@ -442,7 +502,13 @@ export function reviewGame(game: GameState, recordedWinner?: PlayerId | null, op
   add('missedBuilds', 'Build points as soon as you can afford them.', `${stats.missedBuilds} of your turns had a city or settlement in hand that you didn't build.`);
   add('trades', "Don't trade with the leader, and only trade when you gain more than they do.", `${stats.badTrades} of your ${stats.playerTrades} player trades helped the other side as much as you, or more.`);
   add('bank', 'Use your harbors for bank trades.', 'Some bank trades paid 4:1 when your harbor gave a better rate.');
-  add('robber', 'Put the robber on the leader.', "Your steals went to players who weren't leading.");
+  add(
+    'robber',
+    'Put the robber on the leader, and keep it off your own tiles.',
+    stats.robberMoves
+      ? `${stats.weakRobberMoves} of your ${stats.robberMoves} robber moves had a clearly better spot.`
+      : "Your steals went to players who weren't leading.",
+  );
   add('devCards', 'Play dev cards when they help, not at the end.', `You held ${stats.devUnplayed} unplayed at the end.`);
   lessons.sort((a, b) => b.weight - a.weight);
 

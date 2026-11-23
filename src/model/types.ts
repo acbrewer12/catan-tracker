@@ -91,6 +91,9 @@ export interface DiceRoll {
   player?: PlayerId;
   /** ms since epoch */
   at: number;
+  /** Rolls and card events logged when it moved (exact position in the game). */
+  rolls?: number;
+  events?: number;
 }
 
 /**
@@ -187,6 +190,17 @@ export interface GameState {
   cardLog: CardEvent[];
   /** Table rules. Optional so older saves load; read it through `rulesOf()` in model/pieces.ts. */
   rules?: Partial<Rules>;
+  /** Every robber move, oldest first (for the post-game review). Optional: older saves have none. */
+  robberMoves?: RobberMove[];
+}
+
+export interface RobberMove {
+  hex: HexId;
+  /** ms since epoch */
+  at: number;
+  /** Rolls and card events logged when it moved (exact position in the game). */
+  rolls?: number;
+  events?: number;
 }
 
 export const emptyResources = (): ResourceCounts => ({ wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 });

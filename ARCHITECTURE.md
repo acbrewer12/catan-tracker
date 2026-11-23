@@ -38,7 +38,8 @@ src/
   event, even with no payout, so turns split exactly.
 - `model/review.ts` judges only the user's own decisions (opening picks, unbuilt
   points, trades, bank rates, robber, discards, dev cards) with the same planner
-  as Tips, using the board as it stood then. Opponents appear only through public info.
+  as Tips, using the board as it stood then (robber position from `GameState.robberMoves`,
+  logged by `robber/move`). Opponents appear only through public info.
 - `model/learning.ts` learns two bounded knobs from finished games: a strategy bias
   (at most one round, read by `compareStrategies`) and a rival factor (1 to 1.4 on a
   partner's gain in `evaluateTrade`, stricter only). Off/reset from the Review tab.

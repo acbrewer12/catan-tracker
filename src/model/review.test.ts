@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { randomBoard, topologyFor } from './board';
 import { rankCorners } from './suggestions';
+import { robberTargets } from './suggestionsPlay';
 import { reviewGame } from './review';
 import { stateAt, turnsOf } from './history';
 import { archiveGame, emptyArchive, exportArchive, learningOf, mergeArchives, parseArchive } from './archive';
@@ -104,6 +105,25 @@ describe('reviewGame', () => {
     expect(r.stats.cardsLostToSevens).toBe(3);
     // Never mentions what an opponent holds.
     for (const m of r.moments) expect(`${m.title} ${m.detail ?? ''}`).not.toMatch(/holds|in hand: |their cards/i);
+  });
+});
+
+describe('robber moves', () => {
+  it('records each move and judges yours against the best spot', () => {
+    const { g: g0, me, ids } = opened();
+    let g = run(g0, roll(7, me));
+    const targets = robberTargets(g, me, 99);
+    const worst = targets[targets.length - 1].hex;
+    g = run(g, { type: 'robber/move', hex: worst }, roll(6, ids[1]), roll(7, ids[2]), roll(7, ids[3]), roll(7, me));
+    g = run(g, { type: 'robber/move', hex: robberTargets(g, me, 1)[0].hex });
+    expect(g.robberMoves).toHaveLength(2);
+    const r = reviewGame(g, null, { quick: true })!;
+    const rob = r.moments.filter((m) => m.topic === 'robber');
+    expect(r.stats.robberMoves).toBe(2);
+    expect(rob[0].tone).not.toBe('good');
+    expect(rob[0].title).toMatch(/^Turn 1: you put the robber on .* was better\.$/);
+    expect(rob[1].tone).toBe('good');
+    expect(stateAt(g, g.cardLog.length, g.diceHistory.length).robber).toBe(g.robber);
   });
 });
 

@@ -8,12 +8,12 @@
  *   stateAt(game, i, n)    -> the game before card event `i`, after `n` rolls
  *
  * Pieces come from the build events in the log (each has its spot). The robber
- * isn't logged when it moves, so past states put it back on the desert.
+ * comes from `robberMoves` (games saved before those were logged put it on the desert).
  */
 import { desertHex } from './board';
 import { withHands } from './cards';
 import { turnOrder } from './pieces';
-import type { CardEvent, DiceRoll, GameState, Pieces, PlayerId } from './types';
+import type { CardEvent, DiceRoll, GameState, HexId, Pieces, PlayerId } from './types';
 
 export interface TurnInfo {
   /** 0-based position in diceHistory; shown to people as turn index + 1. */
@@ -81,7 +81,23 @@ export function stateAt(game: GameState, upto: number, rolls: number): GameState
     phase: rolls > 0 ? 'playing' : 'placement',
     pieces: piecesFrom(cardLog),
     diceHistory: game.diceHistory.slice(0, rolls),
-    robber: desertHex(game.board),
+    robber: robberAt(game, upto),
     cardLog,
   });
+}
+
+/**
+ * Where the robber stood just before card event `upto`: the last logged move
+ * before that event, else the desert (also for games saved before moves were logged).
+ */
+export function robberAt(game: GameState, upto: number): HexId | null {
+  const next = game.cardLog[upto];
+  const moves = (game.robberMoves ?? []).filter((m) => (m.events !== undefined ? m.events <= upto : !next || m.at <= next.at));
+  return moves.length ? moves[moves.length - 1].hex : desertHex(game.board);
+}
+
+/** Index of the first card event logged after time `at` (cardLog.length if none). */
+export function eventIndexAt(game: GameState, at: number): number {
+  const i = game.cardLog.findIndex((e) => e.at > at);
+  return i < 0 ? game.cardLog.length : i;
 }
