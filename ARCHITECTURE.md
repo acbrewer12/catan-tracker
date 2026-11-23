@@ -133,7 +133,7 @@ Existing actions:
 | Pieces + robber | `state/slices/pieces.ts`, `features/pieces/` |
 | Dice, cards, hand estimates | `state/slices/dice.ts`, `features/dice/` |
 | Suggestions | `model/suggestions*.ts`, `features/tips/` |
-| Play mode (turn-by-turn) | `model/turns.ts`, `features/play/` |
+| Play mode (turn-by-turn) | `model/turns.ts`, `model/tradeOffer.ts`, `features/play/` |
 
 `model/types.ts`, `state/reducer.ts` and `features/registry.tsx` are shared:
 keep changes there small and additive to avoid merge conflicts.
