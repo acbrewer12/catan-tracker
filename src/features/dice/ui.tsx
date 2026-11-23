@@ -61,13 +61,13 @@ export function ResourcePicker({ value, onChange, max }: { value: ResourceCounts
 }
 
 /** Pick a single resource. */
-export function ResourceChoice({ value, onChange }: { value: Resource | null; onChange: (r: Resource) => void }) {
+export function ResourceChoice({ value, onChange, sub }: { value: Resource | null; onChange: (r: Resource) => void; sub?: (r: Resource) => string }) {
   return (
     <div className="grid5">
       {RESOURCES.map((r) => (
         <button key={r} className={`chip ${value === r ? 'on' : ''}`} style={{ background: TERRAIN_STYLE[r].fill }} onClick={() => onChange(r)}>
           <span className="icon">{icon(r)}</span>
-          <small>{TERRAIN_STYLE[r].label}</small>
+          <small>{sub ? sub(r) : TERRAIN_STYLE[r].label}</small>
         </button>
       ))}
     </div>

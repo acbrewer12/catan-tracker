@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { DEV_KINDS, DEV_LABEL, countTotal, discardCount, type HandEstimate } from '../../model/cards';
 import { emptyResources, type DevCardKind, type Player, type PlayerId, type Resource, type ResourceCounts } from '../../model/types';
 import type { NewCardEvent } from '../../state/slices/dice';
+import { useGame } from '../../state/store';
+import { tradeRates } from '../../model/suggestionsPlay';
 import { PlayerPicker, ResourceChoice, ResourcePicker, Sheet, icon, nameOf } from './ui';
 
 export type FormKind = 'trade' | 'bank' | 'steal' | 'discard' | 'buyDev' | 'playDev' | 'fixCount';
@@ -46,6 +48,10 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
   const [res, setRes] = useState<Resource | null>(null);
   const [dev, setDev] = useState<DevCardKind | null>(null);
   const [taken, setTaken] = useState<Record<PlayerId, number>>({});
+  const [res2, setRes2] = useState<Resource | null>(null);
+  const [times, setTimes] = useState(1);
+  const { state } = useGame();
+  const rates = tradeRates(state, a);
   const [count, setCount] = useState<number>(est[player ?? me.id]?.total ?? 0);
 
   const isMe = (id: PlayerId | null) => id === me.id;
@@ -72,21 +78,40 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
           </button>
         </div>
       );
-    case 'bank':
+    case 'bank': {
+      const rate = res ? rates[res] : 0;
+      const ok = !!res && !!res2 && res !== res2;
       return (
         <div className="form">
           <label>Who traded</label>
           {who}
-          <label>Gave to the bank</label>
-          <ResourcePicker value={give} onChange={setGive} />
-          <label>Got</label>
-          <ResourcePicker value={get} onChange={setGet} />
-          <p className="hint">4:1 with the bank, 3:1 or 2:1 at a harbor.</p>
-          <button className="primary" disabled={!countTotal(give) || !countTotal(get)} onClick={() => done({ kind: 'trade', player: a, with: 'bank', give, get })}>
-            Save
+          <label>Gave</label>
+          <ResourceChoice value={res} onChange={setRes} sub={(r) => `${rates[r]}:1`} />
+          <label>For</label>
+          <ResourceChoice value={res2} onChange={setRes2} />
+          <div className="row">
+            <span className="grow">Times</span>
+            <button className="icon-btn" disabled={times <= 1} onClick={() => setTimes(times - 1)}>
+              −
+            </button>
+            <b className="count">{times}</b>
+            <button className="icon-btn" onClick={() => setTimes(times + 1)}>
+              +
+            </button>
+          </div>
+          <p className="hint">
+            Rates come from the harbors {isMe(a) ? 'your' : 'their'} settlements and cities touch (4:1 without one).
+          </p>
+          <button
+            className="primary"
+            disabled={!ok}
+            onClick={() => done({ kind: 'trade', player: a, with: 'bank', give: { [res!]: rate * times }, get: { [res2!]: times } })}
+          >
+            {ok ? `Save: ${rate * times} ${icon(res!)} for ${times} ${icon(res2!)}` : 'Save'}
           </button>
         </div>
       );
+    }
     case 'steal': {
       const needRes = isMe(a) || isMe(b);
       return (
