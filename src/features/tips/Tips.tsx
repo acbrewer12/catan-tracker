@@ -14,6 +14,7 @@ import { openingTurn } from '../../model/pieces';
 import { buildOptions, expansionSpots, robberTargets, tradeRates, type BuildKind, type Trade } from '../../model/suggestionsPlay';
 import { RESOURCES, type EdgeId, type GameState, type HexId, type PlayerId, type Resource, type ResourceCounts, type VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
+import { makePlan, type Goal, type PlanStep } from '../../model/plan';
 import './tips.css';
 
 type View = 'start' | 'play';
@@ -213,6 +214,107 @@ function StartTips({ state, me }: { state: GameState; me: PlayerId }) {
   );
 }
 
+
+const WHEN_LABEL = { now: 'This turn', next: 'Next', later: 'After that', if7: 'On a 7' } as const;
+
+function goalText(state: GameState, g: Goal): string {
+  const at = g.where ? cornerLabel(state, g.where) : '';
+  if (g.item === 'city') return `City on ${at}`;
+  if (g.item === 'settlement') return `Settlement on ${at}${g.roads ? ` (${g.roads} road${g.roads > 1 ? 's' : ''} first)` : ''}`;
+  return 'A dev card';
+}
+
+function goalWhy(g: Goal): string {
+  if (g.item === 'city') return `+1 point and doubles ${g.pips} pips.`;
+  if (g.item === 'settlement')
+    return `+1 point and ${g.pips} more pips${g.newResources.length ? `, adds ${g.newResources.join(', ')}` : ''}.${g.contested ? ' An opponent can reach it as fast, so go first.' : ''}`;
+  return 'Knight to move the robber, a progress card, or a hidden point.';
+}
+
+const roundsText = (n: number) => (n >= 99 ? 'not soon at your current income' : n <= 1 ? 'about 1 round' : `about ${n} rounds`);
+
+function stepView(state: GameState, s: PlanStep, name: (id?: PlayerId) => string): { title: ReactNode; why?: string; focus: Focus } {
+  switch (s.kind) {
+    case 'trade':
+      return {
+        title: `Trade ${s.trade.count} ${icon(s.trade.give)} for ${s.trade.count / { bank: 4, '3:1': 3, '2:1': 2 }[s.rate]} ${icon(s.trade.get)} (${s.rate === 'bank' ? 'bank 4:1' : `${s.rate} harbor`})`,
+        focus: {},
+      };
+    case 'build': {
+      const focus: Focus = s.item === 'road' ? { edges: s.where ? [s.where] : [] } : s.where ? { vertices: [s.where] } : {};
+      if (s.item === 'road') return { title: `Build ${s.count && s.count > 1 ? `${s.count} roads` : 'a road'} here`, why: s.count && s.count > 1 ? 'Start at the dotted edge.' : undefined, focus };
+      if (s.item === 'city') return { title: `Upgrade ${cornerLabel(state, s.where!)} to a city`, focus };
+      if (s.item === 'settlement') return { title: `Build a settlement on ${cornerLabel(state, s.where!)}`, focus };
+      return { title: 'Buy a dev card', focus };
+    }
+    case 'save':
+      return {
+        title: (
+          <>
+            Save up: still need <Cards counts={s.need} />
+          </>
+        ),
+        why: `Ready in ${roundsText(s.eta)} at your income, counting bank trades.`,
+        focus: {},
+      };
+    case 'ask':
+      return {
+        title: (
+          <>
+            Offer <Cards counts={s.offer} /> to other players for <Cards counts={s.want} />
+          </>
+        ),
+        why: 'A 1-for-1 player trade beats the bank. Skip it if the trade would help the leader.',
+        focus: {},
+      };
+    case 'tooMany':
+      return { title: `You hold ${s.cards} cards`, why: `A 7 would cost you ${Math.floor(s.cards / 2)}. Trade or build something to get to 7 or fewer.`, focus: {} };
+    case 'then':
+      return { title: goalText(state, s.goal), why: `${goalWhy(s.goal)} Ready in ${roundsText(s.goal.eta)}.`, focus: s.goal.where ? { vertices: [s.goal.where] } : {} };
+    case 'robber': {
+      const h = state.board.hexes[s.target.hex];
+      return {
+        title: `Robber on ${isResource(h.terrain) ? icon(h.terrain) : ''}${h.number}, steal from ${name(s.target.stealFrom)}`,
+        why: `Blocks ${s.target.hits.map((x) => `${name(x.player)} (${x.pips} pips)`).join(', ')}.`,
+        focus: { hex: s.target.hex },
+      };
+    }
+  }
+}
+
+function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: PlayerId; focus: Focus; setFocus: (f: Focus) => void }) {
+  const plan = useMemo(() => makePlan(state, me), [state, me]);
+  const name = (id?: PlayerId) => state.players.find((p) => p.id === id)?.name ?? '?';
+  if (!plan.goal) return null;
+  let lastWhen = '';
+  return (
+    <section className="tip-section plan">
+      <h2>Your plan: {goalText(state, plan.goal)}</h2>
+      <p className="hint small">{goalWhy(plan.goal)}</p>
+      <ol className="plan-steps">
+        {plan.steps.map((s, i) => {
+          const v = stepView(state, s, name);
+          const head = s.when !== lastWhen ? WHEN_LABEL[s.when] : null;
+          lastWhen = s.when;
+          const on = JSON.stringify(v.focus) === JSON.stringify(focus) && Object.keys(v.focus).length > 0;
+          return (
+            <li key={i}>
+              {head && <div className={`when ${s.when}`}>{head}</div>}
+              <button className={`tip-card ${on ? 'on' : ''}`} onClick={() => setFocus(v.focus)}>
+                <div className="tip-head">
+                  <span className="rank">{i + 1}</span>
+                  <span className="step">{v.title}</span>
+                </div>
+                {v.why && <div className="why">{v.why}</div>}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 const BUILD_LABEL: Record<BuildKind, string> = { city: '🏙️ City', settlement: '🏠 Settlement', road: '🛣️ Road', devCard: '🃏 Dev card' };
 const STATUS_LABEL = { now: 'Ready', trade: 'With trades', need: 'Need cards', blocked: 'Not possible' };
 
@@ -240,12 +342,14 @@ function PlayTips({ state, me }: { state: GameState; me: PlayerId }) {
 
   return (
     <>
+      <PlanCard state={state} me={me} focus={focus} setFocus={focusOn} />
+
       <HexBoard board={state.board} robber={state.robber}>
         <Overlay state={state} ranked={spots.map((s) => s.vertex)} focus={focus} />
       </HexBoard>
 
       <section className="tip-section">
-        <h2>Build next</h2>
+        <h2>All build options</h2>
         <p className="hint small">
           Your hand: <Cards counts={hand ?? {}} />
           {!RESOURCES.some((r) => hand?.[r]) && ' (enter your cards on the Dice tab)'}
