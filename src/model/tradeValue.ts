@@ -180,6 +180,10 @@ export function evaluateTrade(state: GameState, me: PlayerId, partner: PlayerId,
   if (theirs.winsNow) {
     verdict = 'dangerous';
     reasons.push(`${Who} could build ${WHAT[theirs.enablesNow!]} right after and win.`);
+  } else if (theirs.points >= WIN_POINTS - 2 && !mine.winsNow) {
+    // At 8+ you can't see their hand well enough to know a card is harmless.
+    verdict = 'dangerous';
+    reasons.push(`${Who} ${Who === 'They' ? 'have' : 'has'} ${theirs.points} points: one good turn and they win. Only trade with them if it wins you the game.`);
   } else if (near && (theirs.enablesNow || theirs.roundsSaved > 0.2)) {
     verdict = 'dangerous';
     reasons.push(`${Who} ${Who === 'They' ? 'have' : 'has'} ${theirs.points} points. Don't help them at all.`);
