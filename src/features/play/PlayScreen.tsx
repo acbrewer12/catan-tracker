@@ -318,9 +318,23 @@ function SevenSteps({ thief, est, since, open }: { thief: PlayerId; est: Record<
 const cards = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
 const fmt = (r: { min: number; max: number }) => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
 
-/** The focused player's hand: exact for you, a best guess for everyone else. */
+/** The focused player's hand: your exact cards; for others only what the table can see (how many cards). */
 function HandCard({ player, est }: { player?: Player; est?: HandEstimate }) {
   if (!player || !est) return null;
+  if (!player.isMe)
+    return (
+      <section className="card">
+        <div className="row between">
+          <span className="label">{player.name}'s hand</span>
+          <span>
+            <b>{est.total}</b> {est.total === 1 ? 'card' : 'cards'}
+            {est.devCards ? ` · ${est.devCards} dev` : ''}
+            {est.knightsPlayed ? ` · ${est.knightsPlayed}⚔️` : ''}
+          </span>
+        </div>
+        {est.missedCards && <p className="hint small warning">Spent cards the app didn't see them get. Correct the count if needed.</p>}
+      </section>
+    );
   const exact = toCounts(Object.fromEntries(RESOURCES.map((r) => [r, est.resources[r].min])));
   const can = (b: BuildItem) => (player.isMe ? canAfford(exact, b) : RESOURCES.every((r) => est.resources[r].max >= (COST[b][r] ?? 0)));
   const sure = (b: BuildItem) => canAfford(exact, b);

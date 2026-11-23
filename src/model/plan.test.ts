@@ -87,39 +87,18 @@ describe('makePlan', () => {
   });
 });
 
-describe('player trades', () => {
-  it('asks the player who holds the missing card, offering a spare one', () => {
-    const g = played({ sheep: 2 });
-    const me = g.players[0].id;
-    const blue = g.players[2].id;
-    g.hands[blue] = { ...g.hands[blue], resources: res({ wheat: 3, ore: 3, wood: 2, brick: 2 }) };
-    const plan = makePlan(g, me);
-    const asks = plan.steps.filter((s) => s.kind === 'ask');
-    expect(asks.length).toBeGreaterThan(0);
-    for (const a of asks) if (a.kind === 'ask') {
-      expect(a.partner).toBe(blue);
-      expect(a.sure).toBe(true);
-      if (a.give) expect(a.give).toBe('sheep');
+describe('getting missing cards', () => {
+  it('ranks options for each missing card and ends with saving', () => {
+    const g = played({ sheep: 3 });
+    const plan = makePlan(g, g.players[0].id);
+    const gets = plan.steps.filter((s) => s.kind === 'get');
+    if (plan.goal && plan.goal.eta > 0) expect(plan.steps.some((s) => s.kind === 'save')).toBe(true);
+    for (const s of gets) if (s.kind === 'get') {
+      expect(s.options[0].kind).not.toBe('save'); // save-only cards are covered by the save step
+      expect(s.options[s.options.length - 1].kind).toBe('save');
+      const order = { askOther: 0, bank: 1, switchGoal: 2, save: 3 };
+      for (let i = 1; i < s.options.length; i++) expect(order[s.options[i].kind]).toBeGreaterThanOrEqual(order[s.options[i - 1].kind]);
     }
-  });
-
-  it('never asks a player close to winning', () => {
-    const g = played({});
-    const me = g.players[0].id;
-    const op = g.players[1].id;
-    g.hands[op] = { ...g.hands[op], resources: res({ wheat: 5, ore: 5, wood: 5, brick: 5, sheep: 5 }) };
-    const topo = topologyFor('standard');
-    // Give them 8 points with cities on far-apart open corners.
-    let placed = 0;
-    for (const v of Object.keys(topo.vertices)) {
-      if (placed >= 3) break;
-      if (g.pieces.buildings[v] || topo.vertices[v].adjacent.some((a) => g.pieces.buildings[a])) continue;
-      g.pieces.buildings[v] = { player: op, kind: 'city' };
-      placed++;
-    }
-    const plan = makePlan(g, me);
-    expect(plan.threats.some((t) => t.kind === 'nearWin' && t.player === op)).toBe(true);
-    for (const s of plan.steps) if (s.kind === 'ask') expect(s.partner).not.toBe(op);
   });
 });
 
@@ -137,5 +116,37 @@ describe('dev cards', () => {
     };
     const plan = makePlan(withKnight, me);
     expect(plan.steps[0]).toMatchObject({ kind: 'playDev', card: 'knight', why: 'robberOnYou' });
+  });
+});
+
+describe('count to 10', () => {
+  /** Turn my buildings into cities and add settlements until I have `points` on the board. */
+  function atPoints(g: GameState, points: number): GameState {
+    const me = g.players[0].id;
+    const topo = topologyFor('standard');
+    const b = { ...g.pieces.buildings };
+    let pts = 1;
+    for (const v of Object.keys(topo.vertices)) {
+      if (pts >= points) break;
+      if (b[v] || topo.vertices[v].adjacent.some((a) => b[a])) continue;
+      const kind = pts + 2 <= points ? 'city' : 'settlement';
+      b[v] = { player: me, kind };
+      pts += kind === 'city' ? 2 : 1;
+    }
+    return { ...g, pieces: { ...g.pieces, buildings: b } };
+  }
+
+  it('says you win when hidden VP cards bring you to 10', () => {
+    const g = atPoints(played({}), 8);
+    const me = g.players[0].id;
+    const vp = (id: string) => ({ id, at: 1, kind: 'build' as const, player: me, item: 'devCard' as const, free: true, devCard: 'victoryPoint' as const });
+    const plan = makePlan({ ...g, cardLog: [vp('a'), vp('b')] }, me);
+    expect(plan.steps[0]).toMatchObject({ kind: 'win', points: 10, hiddenVp: 2 });
+  });
+
+  it('warns to keep a low profile near 10 visible points', () => {
+    const g = atPoints(played({}), 8);
+    const plan = makePlan(g, g.players[0].id);
+    expect(plan.steps.some((s) => s.kind === 'profile')).toBe(true);
   });
 });

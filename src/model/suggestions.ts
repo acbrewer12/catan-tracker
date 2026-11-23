@@ -84,13 +84,35 @@ export interface ScoreContext {
   owned: ResourceCounts;
   /** Robber hex: its production is counted at half (it will usually move). */
   robber?: string | null;
+  /** Numbers the player's buildings already sit on (to spread rolls). */
+  ownedNumbers?: number[];
 }
+
+function ownedNumbers(state: GameState, player: PlayerId): number[] {
+  const topo = topologyFor(state.board.layout);
+  const out: number[] = [];
+  for (const [v, b] of Object.entries(state.pieces.buildings)) {
+    if (b.player !== player) continue;
+    for (const id of topo.vertices[v]?.hexes ?? []) {
+      const h = state.board.hexes[id];
+      if (h?.number && isResource(h.terrain)) out.push(h.number);
+    }
+  }
+  return out;
+}
+
+/** Resource pairs that build things: wood+brick (roads, settlements), ore+wheat (cities, dev cards). */
+const PAIRS: Array<[Resource, Resource, string]> = [
+  ['wood', 'brick', 'wood + brick for roads and settlements'],
+  ['ore', 'wheat', 'ore + wheat for cities'],
+];
 
 export function scoreContext(state: GameState, player: PlayerId | null): ScoreContext {
   return {
     weights: scarcityWeights(state.board),
     owned: player ? playerProduction(state, player, true) : emptyResources(),
     robber: state.phase === 'playing' ? state.robber : null,
+    ownedNumbers: player ? ownedNumbers(state, player) : [],
   };
 }
 
@@ -124,16 +146,35 @@ export function scoreCorner(board: Board, v: VertexId, ctx: ScoreContext): Corne
     score -= 1;
     reasons.push('repeats a number');
   }
+  // Spread your numbers: a number you already sit on adds a burst, not a new roll that pays.
+  const shared = numbers.filter((x) => ctx.ownedNumbers?.includes(x)).length;
+  if (shared) {
+    score -= 0.4 * shared;
+    if (shared === numbers.length && numbers.length > 1) reasons.push('same numbers as your other settlement');
+  }
 
+  // Coherence: completing a pair you can build with is worth more than a stray resource.
+  for (const [a, b, label] of PAIRS) {
+    const had = ctx.owned[a] > 0 && ctx.owned[b] > 0;
+    const has = ctx.owned[a] + production[a] > 0 && ctx.owned[b] + production[b] > 0;
+    if (!had && has) {
+      score += production[a] && production[b] ? 0.6 : 0.9;
+      if (RESOURCES.some((r) => ctx.owned[r] > 0)) reasons.push(`completes ${label}`);
+      else if (production[a] && production[b]) reasons.push(label);
+    }
+  }
+
+  // Harbors are worth what you can feed them.
   const port = portAtVertex(board, v);
   if (port) {
+    const made = RESOURCES.reduce((sum, r) => sum + ctx.owned[r] + production[r], 0);
     if (port.kind === 'any') {
-      score += 1;
+      score += Math.min(1.2, 0.3 + made * 0.04);
       reasons.push('3:1 harbor');
     } else {
-      const made = ctx.owned[port.kind] + production[port.kind];
-      score += 0.6 + made * 0.25;
-      reasons.push(made ? `2:1 ${RES_LABEL[port.kind]} harbor you'd feed` : `2:1 ${RES_LABEL[port.kind]} harbor`);
+      const feed = ctx.owned[port.kind] + production[port.kind];
+      score += Math.min(2, 0.15 + feed * 0.3);
+      reasons.push(feed >= 4 ? `2:1 ${RES_LABEL[port.kind]} harbor you'd feed` : feed ? `2:1 ${RES_LABEL[port.kind]} harbor (little ${RES_LABEL[port.kind]} yet)` : `2:1 ${RES_LABEL[port.kind]} harbor (you make no ${RES_LABEL[port.kind]})`);
     }
   }
   if (total >= 11) reasons.unshift(`${total} pips`);

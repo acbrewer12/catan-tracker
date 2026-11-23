@@ -11,53 +11,35 @@
  *    take Longest Road / Largest Army.
  * Heuristics on top of fast simulations, not a full solver.
  */
-import { COST, handEstimates, type HandEstimate } from './cards';
-import { boardPoints, checkBuilding, longestRoad, longestRoadHolder, piecesLeft } from './pieces';
-import { playerProduction, scoreContext, scoreCorner } from './suggestions';
+import { COST, handEstimates } from './cards';
+import { cardOptions, likelyHas, publicHand, visiblePoints, type Backup } from './tradeValue';
+import { suggestDiscard } from './discard';
+import { add, goals, roundsToAfford, shortfall, threats, total, type Goal, type GoalItem, type Threat } from './goals';
 import { expansionSpots, robberTargets, tradeRates, tradesFor, type RobberTarget, type Trade } from './suggestionsPlay';
-import { affordOdds, compareStrategies, sevenRisk, WIN_POINTS, type AffordOdds, type PlayerOutlook, type Purchase, type StrategyResult } from './strategy';
-import { largestArmyHolder } from './suggestionsPlay';
+import { WIN_POINTS, affordOdds, compareStrategies, sevenRisk, type AffordOdds, type PlayerOutlook, type Purchase, type StrategyResult } from './strategy';
 import type { DevCardKind, EdgeId, GameState, HexId, PlayerId, Resource, ResourceCounts, VertexId } from './types';
 import { RESOURCES, emptyResources } from './types';
 import { topologyFor } from './board';
-
-export type GoalItem = 'city' | 'settlement' | 'devCard' | 'road';
-
-export interface Goal {
-  item: GoalItem;
-  /** Corner for a city or settlement. */
-  where?: VertexId;
-  /** Roads to build first (settlement only). */
-  roads: number;
-  /** First road toward the spot. */
-  nextRoad?: EdgeId;
-  /** Everything it costs, roads included. */
-  cost: ResourceCounts;
-  /** Rounds until affordable (0 = this turn), with trades. 99 = not in sight. */
-  eta: number;
-  pips: number;
-  /** An opponent can reach the spot as fast. */
-  contested: boolean;
-  newResources: Resource[];
-  value: number;
-}
 
 export type PlanStep =
   | { kind: 'playDev'; when: 'now'; card: DevCardKind; why: 'robberOnYou' | 'army' | 'roads' | 'plenty' | 'monopoly'; take?: ResourceCounts; resource?: Resource; haul?: number; hex?: HexId }
   | { kind: 'trade'; when: 'now'; trade: Trade; rate: 'bank' | '3:1' | '2:1' }
   | { kind: 'build'; when: 'now' | 'next'; item: GoalItem; where?: VertexId | EdgeId; count?: number; pips?: number; newResources?: Resource[] }
   | { kind: 'save'; when: 'next'; need: ResourceCounts; eta: number; odds: AffordOdds; goal: Goal }
-  | { kind: 'tooMany'; when: 'now'; cards: number; risk: number }
-  /** Ask a specific player for a card you need; `give` is a spare card they're short of. */
-  | { kind: 'ask'; when: 'now'; partner: PlayerId; get: Resource; give: Resource | null; sure: boolean; theyHave: number }
+  /** Hand over 7 before the next rolls; `drop` is what to give up if a 7 comes. */
+  | { kind: 'tooMany'; when: 'now'; cards: number; risk: number; drop?: ResourceCounts }
+  /** You reach 10 this turn: buildings, awards and hidden VP cards. */
+  | { kind: 'win'; when: 'now'; points: number; hiddenVp: number; builds: number }
+  /** Near 10 visible points: the table turns on the leader. */
+  | { kind: 'profile'; when: 'now'; points: number }
+  /** Get a card the goal still needs: ranked options (good player trades, bank/harbor, another build, save). */
+  | { kind: 'get'; when: 'now'; resource: Resource; amount: number; options: Backup[] }
   | { kind: 'then'; when: 'later'; buy: Purchase }
-  | { kind: 'robber'; when: 'if7'; target: RobberTarget };
+  /** `stealFor`: the victim was picked as the one most likely to hold this card you need. */
+  | { kind: 'robber'; when: 'if7'; target: RobberTarget; stealFor?: Resource };
 
-export type Threat =
-  | { kind: 'nearWin'; player: PlayerId; points: number; devCards: number }
-  | { kind: 'longestRoad'; player: PlayerId; length: number; mine: number; holds: boolean }
-  | { kind: 'largestArmy'; player: PlayerId; knights: number; mine: number; holds: boolean }
-  | { kind: 'race'; player: PlayerId; where: VertexId };
+export type { Goal, GoalItem, Threat } from './goals';
+export { goals, roundsToAfford, threats } from './goals';
 
 export interface Plan {
   goal: Goal | null;
@@ -69,74 +51,6 @@ export interface Plan {
   threats: Threat[];
 }
 
-const add = (a: Partial<ResourceCounts>, b: Partial<ResourceCounts>, times = 1): ResourceCounts => {
-  const out = emptyResources();
-  for (const r of RESOURCES) out[r] = (a[r] ?? 0) + (b[r] ?? 0) * times;
-  return out;
-};
-const total = (c: Partial<ResourceCounts>) => RESOURCES.reduce((s, r) => s + (c[r] ?? 0), 0);
-const shortfall = (hand: ResourceCounts, cost: ResourceCounts) => {
-  const out = emptyResources();
-  for (const r of RESOURCES) out[r] = Math.max(0, cost[r] - hand[r]);
-  return out;
-};
-
-/**
- * Rounds until `cost` is affordable (with trades), assuming the player keeps
- * their cards and every player rolls once per round.
- */
-export function roundsToAfford(hand: ResourceCounts, cost: ResourceCounts, perRound: ResourceCounts, rates: ResourceCounts): number {
-  for (let t = 0; t <= 20; t++) {
-    const h = emptyResources();
-    for (const r of RESOURCES) h[r] = Math.floor(hand[r] + perRound[r] * t + 1e-9);
-    if (tradesFor(h, cost, rates)) return t;
-  }
-  return 99;
-}
-
-/** Candidate goals for a player, best first. */
-export function goals(state: GameState, player: PlayerId): Goal[] {
-  const hand = state.hands[player]?.resources ?? emptyResources();
-  const rates = tradeRates(state, player);
-  const income = playerProduction(state, player);
-  const n = Math.max(2, state.players.length);
-  const perRound = emptyResources();
-  for (const r of RESOURCES) perRound[r] = (income[r] * n) / 36;
-  const left = piecesLeft(state, player);
-  const ctx = scoreContext(state, player);
-  const out: Goal[] = [];
-
-  const goal = (g: Omit<Goal, 'eta' | 'value'>, gain: number): Goal => {
-    const eta = roundsToAfford(hand, g.cost, perRound, rates);
-    return { ...g, eta, value: gain / (1 + 0.5 * eta) };
-  };
-
-  if (left.city > 0) {
-    for (const [v, b] of Object.entries(state.pieces.buildings)) {
-      if (b.player !== player || b.kind !== 'settlement') continue;
-      const sc = scoreCorner(state.board, v, { ...ctx, owned: income });
-      out.push(goal({ item: 'city', where: v, roads: 0, cost: add(COST.city, {}), pips: sc.pips, contested: false, newResources: [] }, 4 + sc.pips * 0.5));
-    }
-  }
-
-  if (left.settlement > 0) {
-    for (const s of expansionSpots(state, player, 6)) {
-      if (s.roads > Math.min(3, left.road)) continue;
-      if (s.roads === 0 && checkBuilding(state, s.vertex, player, 'settlement').length) continue;
-      const cost = add(COST.settlement, COST.road, s.roads);
-      out.push(
-        goal(
-          { item: 'settlement', where: s.vertex, roads: s.roads, nextRoad: s.nextRoad, cost, pips: s.pips, contested: s.contested, newResources: s.newResources },
-          4 + s.score * 0.5 + (s.contested ? 1.5 : 0),
-        ),
-      );
-    }
-  }
-
-  out.push(goal({ item: 'devCard', roads: 0, cost: add(COST.devCard, {}), pips: 0, contested: false, newResources: [] }, 2.5 + (income.ore + income.wheat) * 0.03));
-  return out.sort((a, b) => b.value - a.value);
-}
-
 function rateLabel(rates: ResourceCounts, r: Resource): 'bank' | '3:1' | '2:1' {
   return rates[r] === 2 ? '2:1' : rates[r] === 3 ? '3:1' : 'bank';
 }
@@ -145,46 +59,6 @@ function rateLabel(rates: ResourceCounts, r: Resource): 'bank' | '3:1' | '2:1' {
 function goalFor(all: Goal[], buy: Purchase): Goal | null {
   const hit = all.find((g) => g.item === buy.item && (buy.item === 'devCard' || g.where === buy.where));
   return hit ?? null;
-}
-
-/** Opponents' hands: estimates from the Dice tab, or the plain hand when there's no log. */
-function opponentCards(state: GameState, est: Record<PlayerId, HandEstimate>, p: PlayerId, r: Resource): { expected: number; min: number } {
-  const e = state.cardLog?.length ? est[p]?.resources?.[r] : undefined;
-  if (e) return { expected: e.expected, min: e.min };
-  const h = state.hands[p];
-  return { expected: h?.resources[r] ?? 0, min: h?.resources[r] ?? 0 };
-}
-
-export function threats(state: GameState, me: PlayerId, goal: Goal | null): Threat[] {
-  const out: Threat[] = [];
-  const holder = longestRoadHolder(state);
-  const army = largestArmyHolder(state);
-  const myRoad = longestRoad(state, me);
-  const myKnights = state.hands[me]?.knightsPlayed ?? 0;
-  for (const p of state.players) {
-    if (p.id === me) continue;
-    const pts = boardPoints(state, p.id, holder) + (army === p.id ? 2 : 0);
-    const dev = state.hands[p.id]?.devCards ?? 0;
-    if (pts >= WIN_POINTS - 3) out.push({ kind: 'nearWin', player: p.id, points: pts, devCards: dev });
-    const len = longestRoad(state, p.id);
-    if (holder === p.id || (len >= 4 && len > myRoad)) out.push({ kind: 'longestRoad', player: p.id, length: len, mine: myRoad, holds: holder === p.id });
-    const k = state.hands[p.id]?.knightsPlayed ?? 0;
-    if (army === p.id || (k >= 2 && k >= myKnights)) out.push({ kind: 'largestArmy', player: p.id, knights: k, mine: myKnights, holds: army === p.id });
-  }
-  if (goal?.contested && goal.where) {
-    // Who else can reach the spot: anyone with a road or building within 2 steps.
-    const topo = topologyFor(state.board.layout);
-    const near = new Set<VertexId>([goal.where, ...topo.vertices[goal.where].adjacent]);
-    for (const v of [...near]) for (const a of topo.vertices[v].adjacent) near.add(a);
-    const rival = state.players.find(
-      (p) =>
-        p.id !== me &&
-        [...near].some((v) => state.pieces.buildings[v]?.player === p.id || topo.vertices[v].edges.some((e) => state.pieces.roads[e] === p.id)),
-    );
-    if (rival) out.push({ kind: 'race', player: rival.id, where: goal.where });
-  }
-  const order = { nearWin: 0, race: 1, longestRoad: 2, largestArmy: 3 };
-  return out.sort((a, b) => order[a.kind] - order[b.kind]);
 }
 
 /** The plan for `player` (normally me): strategy, goal and ordered steps. */
@@ -228,7 +102,7 @@ export function makePlan(state: GameState, player: PlayerId): Plan {
       } else if (myDev.monopoly > 0) {
         const r = RESOURCES.filter((x) => need[x] > 0).sort((a, b) => b.localeCompare(a))[0];
         if (r) {
-          const haul = state.players.filter((p) => p.id !== player).reduce((sum, p) => sum + opponentCards(state, est, p.id, r).expected, 0);
+          const haul = state.players.filter((p) => p.id !== player).reduce((sum, p) => sum + publicHand(state, p.id, player)[r], 0);
           if (haul >= Math.max(3, need[r])) {
             steps.push({ kind: 'playDev', when: 'now', card: 'monopoly', why: 'monopoly', resource: r, haul: Math.round(haul * 10) / 10 });
             hand[r] += Math.floor(haul);
@@ -265,29 +139,35 @@ export function makePlan(state: GameState, player: PlayerId): Plan {
   if (nextGoal) {
     const need = shortfall(hand, nextGoal.cost);
     if (total(need) > 0) {
-      const spare = emptyResources();
-      for (const r of RESOURCES) spare[r] = Math.max(0, Math.floor(hand[r]) - nextGoal.cost[r]);
-      const leaders = new Set(threats(state, player, null).filter((t) => t.kind === 'nearWin').map((t) => t.player));
-      for (const r of RESOURCES.filter((x) => need[x] > 0)) {
-        const options = state.players
-          .filter((p) => p.id !== player && !leaders.has(p.id))
-          .map((p) => ({ p: p.id, ...opponentCards(state, est, p.id, r) }))
-          .filter((x) => x.expected >= 0.5)
-          .sort((a, b) => Number(b.min >= 1) - Number(a.min >= 1) || b.expected - a.expected);
-        const best = options[0];
-        if (!best) continue;
-        const give = RESOURCES.filter((x) => spare[x] > 0).sort((a, b) => opponentCards(state, est, best.p, a).expected - opponentCards(state, est, best.p, b).expected)[0] ?? null;
-        if (give) spare[give]--;
-        steps.push({ kind: 'ask', when: 'now', partner: best.p, get: r, give, sure: best.min >= 1, theyHave: Math.round(best.expected * 10) / 10 });
-        if (steps.filter((s) => s.kind === 'ask').length >= 2) break;
+      // Each missing card: ranked ways to get it. Plan with the hand left after this turn's builds.
+      const after: GameState = { ...state, hands: { ...state.hands, [player]: { ...state.hands[player], resources: floorAll(hand) } } };
+      const thenBuy = (strategy?.buys ?? []).find((b) => b.round > 0 && !(b.item === nextGoal.item && b.where === nextGoal.where));
+      const thenGoal = thenBuy ? goalFor(all, thenBuy) : null;
+      const keep = emptyResources();
+      for (const r of RESOURCES) keep[r] = Math.max(nextGoal.cost[r], thenGoal?.cost[r] ?? 0);
+      // Skip a card whose best option is just "save": the save step below covers it.
+      // Cards one step offers (a bank trade) aren't offered again by the next.
+      let pool = after;
+      for (const r of RESOURCES.filter((x) => need[x] > 0).sort((a, b) => need[b] - need[a]).slice(0, 2)) {
+        const options = cardOptions(pool, player, r, nextGoal, [], keep, need[r]);
+        if (!options.length || options[0].kind === 'save') continue;
+        steps.push({ kind: 'get', when: 'now', resource: r, amount: need[r], options });
+        const b = options[0];
+        if (b.kind === 'bank') {
+          const res = { ...pool.hands[player].resources, [b.give]: pool.hands[player].resources[b.give] - b.count };
+          pool = { ...pool, hands: { ...pool.hands, [player]: { ...pool.hands[player], resources: res } } };
+        }
       }
       const cards = total(hand);
-      if (cards > 7) steps.push({ kind: 'tooMany', when: 'now', cards: Math.floor(cards), risk: sevenRisk(n) });
+      if (cards > 7) steps.push({ kind: 'tooMany', when: 'now', cards: Math.floor(cards), risk: sevenRisk(n), drop: dropFor(after, player, nextGoal) });
       const odds = affordOdds({ ...state, hands: { ...state.hands, [player]: { ...state.hands[player], resources: floorAll(hand) } } }, player, nextGoal.cost, 8);
       steps.push({ kind: 'save', when: 'next', need, eta: roundsToAfford(floorAll(hand), nextGoal.cost, o.perRound, rates), odds, goal: nextGoal });
       if (nextGoal.roads && nextGoal.item === 'settlement') steps.push({ kind: 'build', when: 'next', item: 'road', where: nextGoal.nextRoad, count: nextGoal.roads });
       steps.push({ kind: 'build', when: 'next', item: nextGoal.item, where: nextGoal.item === 'road' ? nextGoal.nextRoad : nextGoal.where, pips: nextGoal.pips, newResources: nextGoal.newResources });
-    } else if (total(hand) > 7) steps.push({ kind: 'tooMany', when: 'now', cards: Math.floor(total(hand)), risk: sevenRisk(n) });
+    } else if (total(hand) > 7) {
+      const after: GameState = { ...state, hands: { ...state.hands, [player]: { ...state.hands[player], resources: floorAll(hand) } } };
+      steps.push({ kind: 'tooMany', when: 'now', cards: Math.floor(total(hand)), risk: sevenRisk(n), drop: dropFor(after, player, nextGoal) });
+    }
   }
 
   // 4. After that: the strategy's next purchases.
@@ -295,9 +175,41 @@ export function makePlan(state: GameState, player: PlayerId): Plan {
   const later = (strategy?.buys ?? []).filter((b) => b.round > 0 && !(b.where && shown.has(b.where)) && !(nextGoal && b.item === nextGoal.item && b.where === nextGoal.where));
   for (const b of later.slice(0, 2)) steps.push({ kind: 'then', when: 'later', buy: b });
 
+  // Count to 10: buildings + awards + hidden VP cards, plus what you build this turn.
+  const hiddenVp = myDev?.victoryPoint ?? 0;
+  const visible = visiblePoints(state, player);
+  const pointsBuilt = steps.filter((s) => s.kind === 'build' && s.when === 'now' && (s.item === 'settlement' || s.item === 'city')).length;
+  if (visible + hiddenVp + pointsBuilt >= WIN_POINTS) {
+    steps.unshift({ kind: 'win', when: 'now', points: visible + hiddenVp + pointsBuilt, hiddenVp, builds: pointsBuilt });
+  } else if (visible >= WIN_POINTS - 3) {
+    const at = steps.map((x) => x.when).lastIndexOf('now') + 1;
+    steps.splice(at, 0, { kind: 'profile', when: 'now', points: visible });
+  }
+
+  // Robber: best tile (hurts the leader, spares your tiles); steal from whoever
+  // most likely holds a card you still need (public info: income and card count).
   const robber = robberTargets(state, player, 1)[0];
-  if (robber) steps.push({ kind: 'robber', when: 'if7', target: robber });
+  if (robber) {
+    const want = nextGoal ? RESOURCES.filter((r) => shortfall(floorAll(hand), nextGoal.cost)[r] > 0) : [];
+    let stealFor: Resource | undefined;
+    if (want.length && robber.hits.length > 1) {
+      const pick = robber.hits
+        .map((h) => ({ p: h.player, r: want.reduce((best, r) => (likelyHas(state, h.player, r) > likelyHas(state, h.player, best) ? r : best), want[0]) }))
+        .map((x) => ({ ...x, odds: likelyHas(state, x.p, x.r) }))
+        .sort((a, b) => b.odds - a.odds)[0];
+      if (pick && pick.odds > 0 && pick.p !== robber.stealFrom) {
+        robber.stealFrom = pick.p;
+        stealFor = pick.r;
+      } else if (pick && pick.p === robber.stealFrom && pick.odds >= 0.5) stealFor = pick.r;
+    }
+    steps.push({ kind: 'robber', when: 'if7', target: robber, stealFor });
+  }
   return { goal, steps, strategy, strategies: results, outlook: o, threats: threats(state, player, nextGoal ?? goal) };
+}
+
+/** What to drop if a 7 comes before you spend (keeps the goal's cards). */
+function dropFor(state: GameState, player: PlayerId, goal: Goal | null): ResourceCounts | undefined {
+  return suggestDiscard(state, player, goal)?.discard;
 }
 
 const floorAll = (c: ResourceCounts) => {

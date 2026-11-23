@@ -230,9 +230,6 @@ function SevenSteps({ est, roller, openForm, go }: { est: Record<PlayerId, HandE
 
 // ---------------------------------------------------------------------------
 
-function fmt(r: { min: number; max: number }) {
-  return r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`;
-}
 
 function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; openForm: Open }) {
   const { state, dispatch } = useGame();
@@ -306,7 +303,7 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
 
       <section className="card">
         <div className="row between">
-          <span className="label">Opponents (best guess)</span>
+          <span className="label">Opponents (card counts)</span>
           <button className="link" onClick={() => openForm('fixCount')}>
             correct a count
           </button>
@@ -327,18 +324,6 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
                       {e.knightsPlayed ? ` · ${e.knightsPlayed}⚔️` : ''}
                     </span>
                   </div>
-                  <div className="opp-res">
-                    {RESOURCES.map((r) => (
-                      <span key={r} className={`opp-cell ${e.resources[r].max === 0 ? 'zero' : ''}`} style={{ background: TERRAIN_STYLE[r].fill }}>
-                        {icon(r)} {fmt(e.resources[r])}
-                      </span>
-                    ))}
-                  </div>
-                  {e.possibilities > 1 && (
-                    <p className="hint small">
-                      Likely: {RESOURCES.filter((r) => e.resources[r].max > e.resources[r].min).map((r) => `${icon(r)} ${e.resources[r].expected.toFixed(1)}`).join('  ')}
-                    </p>
-                  )}
                   {e.missedCards && <p className="hint small warning">Spent cards the app didn't see them get. Correct their count if needed.</p>}
                 </li>
               );

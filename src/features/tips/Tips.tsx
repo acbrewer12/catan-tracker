@@ -15,6 +15,7 @@ import { buildOptions, expansionSpots, robberTargets, tradeRates, type BuildKind
 import { RESOURCES, type EdgeId, type GameState, type HexId, type PlayerId, type Resource, type ResourceCounts, type VertexId } from '../../model/types';
 import { useGame } from '../../state/store';
 import { makePlan, type Goal, type Plan, type PlanStep, type Threat } from '../../model/plan';
+import type { Backup } from '../../model/tradeValue';
 import { WIN_POINTS, type PlayerOutlook, type Purchase, type StrategyId } from '../../model/strategy';
 import { DEV_DECK } from '../../model/cards';
 import './tips.css';
@@ -245,7 +246,27 @@ function devOdds(state: GameState, o: PlayerOutlook | null): string {
   return `${pct(deck.victoryPoint / size)} chance of a hidden point, ${pct(deck.knight / size)} a knight.${army}`;
 }
 
-function stepView(state: GameState, plan: Plan, s: PlanStep, name: (id?: PlayerId) => string): { title: ReactNode; why?: string; focus: Focus } {
+/** One way to get a card, as a short instruction. */
+function backupTitle(state: GameState, b: Backup | undefined, get: Resource, name: (id?: PlayerId) => string): ReactNode {
+  if (!b) return 'save up';
+  switch (b.kind) {
+    case 'askOther':
+      return (
+        <>
+          ask {name(b.partner)}, offer <Cards counts={b.give} />
+        </>
+      );
+    case 'bank':
+      return `trade ${b.count} ${icon(b.give)} for ${b.count / b.rate} ${icon(get)} (${b.rate === 4 ? 'bank' : `${b.rate}:1 harbor`})`;
+    case 'switchGoal':
+      if (b.goal.item === 'devCard') return 'buy a dev card instead';
+      return `build a ${b.goal.item === 'city' ? 'city' : 'settlement'} on ${cornerLabel(state, b.goal.where!)} instead`;
+    case 'save':
+      return 'keep your cards and save';
+  }
+}
+
+function stepView(state: GameState, plan: Plan, s: PlanStep, name: (id?: PlayerId) => string): { title: ReactNode; why?: string; extra?: ReactNode; focus: Focus } {
   const n = Math.max(2, state.players.length);
   switch (s.kind) {
     case 'playDev': {
@@ -294,14 +315,52 @@ function stepView(state: GameState, plan: Plan, s: PlanStep, name: (id?: PlayerI
         why: `${pct(s.odds.byTurn[1] ?? 0)} chance you have it by your next turn, ${pct(s.odds.byTurn[2] ?? 0)} within 2 turns, ${s.odds.median < 99 ? `and usually within ${s.odds.median} turn${s.odds.median > 1 ? 's' : ''}` : 'and likely more than 8 turns without trading with players'} (simulated dice, 7s and bank trades included).`,
         focus: {},
       };
-    case 'ask':
+    case 'get': {
+      const [first, ...rest] = s.options;
       return {
-        title: `Ask ${name(s.partner)} for 1 ${icon(s.get)}${s.give ? `, offer 1 ${icon(s.give)}` : ''}`,
-        why: `${s.sure ? `They definitely hold ${icon(s.get)}` : `They probably hold about ${s.theyHave} ${icon(s.get)}`}${s.give ? `, and they're short of ${icon(s.give)}` : ''}. A 1-for-1 trade beats the bank's 4-for-1.`,
+        title: (
+          <>
+            Get {s.amount > 1 ? `${s.amount} ` : ''}
+            {icon(s.resource)}: {backupTitle(state, first, s.resource, name)}
+          </>
+        ),
+        why: first?.why,
+        extra: rest.length ? (
+          <ol className="backups">
+            {rest.map((b, i) => (
+              <li key={i}>
+                <b>{i === 0 ? 'If not' : 'Then'}:</b> {backupTitle(state, b, s.resource, name)}
+                <div className="why">{b.why}</div>
+              </li>
+            ))}
+          </ol>
+        ) : undefined,
+        focus: first?.kind === 'switchGoal' && first.goal.where ? { vertices: [first.goal.where] } : {},
+      };
+    }
+    case 'tooMany':
+      return {
+        title: `You hold ${s.cards} cards`,
+        why: `${pct(s.risk)} chance of a 7 before your next turn, which would cost you ${Math.floor(s.cards / 2)}. Build or trade down to 7 if you can.`,
+        extra: s.drop ? (
+          <p className="why">
+            If a 7 comes first, drop <Cards counts={s.drop} /> and keep the cards for your goal.
+          </p>
+        ) : undefined,
         focus: {},
       };
-    case 'tooMany':
-      return { title: `You hold ${s.cards} cards`, why: `${pct(s.risk)} chance of a 7 before your next turn, which would cost you ${Math.floor(s.cards / 2)}. Build or trade down to 7.`, focus: {} };
+    case 'win':
+      return {
+        title: s.builds ? 'You can win this turn' : 'You have 10 points: claim the win',
+        why: `${s.builds ? `Make the builds above and you reach ${s.points}` : `You're at ${s.points}`}${s.hiddenVp ? ` counting your ${s.hiddenVp} hidden VP card${s.hiddenVp > 1 ? 's' : ''}; reveal them now` : ''}.`,
+        focus: {},
+      };
+    case 'profile':
+      return {
+        title: `Keep a low profile at ${s.points} points`,
+        why: 'Players near the win get robbed and refused trades. Only trade when it clearly helps you, keep VP cards hidden, and try to take your last points in one turn.',
+        focus: {},
+      };
     case 'then':
       return {
         title: buyText(state, s.buy),
@@ -312,7 +371,7 @@ function stepView(state: GameState, plan: Plan, s: PlanStep, name: (id?: PlayerI
       const h = state.board.hexes[s.target.hex];
       return {
         title: `Robber on ${isResource(h.terrain) ? icon(h.terrain) : ''}${h.number}, steal from ${name(s.target.stealFrom)}`,
-        why: `Blocks ${s.target.hits.map((x) => `${name(x.player)} (${x.pips} pips)`).join(', ')}.`,
+        why: `Blocks ${s.target.hits.map((x) => `${name(x.player)} (${x.pips} pips)`).join(', ')}${s.target.selfPips ? '' : ' and none of your tiles'}.${s.stealFor ? ` ${name(s.target.stealFrom)} is the most likely to have ${icon(s.stealFor)} (going by what they roll), which you need.` : ''}`,
         focus: { hex: s.target.hex },
       };
     }
@@ -378,6 +437,7 @@ function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: Player
                   <span className="step">{v.title}</span>
                 </div>
                 {v.why && <div className="why">{v.why}</div>}
+                {v.extra}
               </button>
             </li>
           );
