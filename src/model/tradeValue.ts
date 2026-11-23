@@ -15,7 +15,7 @@
 import { add, goals, total, type Goal } from './goals';
 import { boardPoints, longestRoad, longestRoadHolder } from './pieces';
 import { affordOdds, WIN_POINTS, type AffordOdds } from './strategy';
-import { playerProduction } from './suggestions';
+import { playerProduction, typicalHandSize } from './suggestions';
 import { largestArmyHolder, tradeRates, tradesFor } from './suggestionsPlay';
 import { COST } from './cards';
 import { rivalFactor } from './learning';
@@ -28,10 +28,16 @@ export function visiblePoints(state: GameState, p: PlayerId): number {
   return boardPoints(state, p, longestRoadHolder(state)) + (largestArmyHolder(state) === p ? 2 : 0);
 }
 
-/** How many resource cards a player holds (public: you can count them at the table). */
+/**
+ * How many resource cards a player holds. Exact for the user. Opponents' cards
+ * aren't tracked, so for them it's a guess from public info: about a round
+ * and a half of what their buildings produce, between 1 and 7 (0 if they
+ * produce nothing).
+ */
 export function handCount(state: GameState, p: PlayerId): number {
   const h = state.hands[p];
-  return h ? RESOURCES.reduce((s, r) => s + h.resources[r], 0) + h.unknown : 0;
+  if (state.players.find((x) => x.id === p)?.isMe) return h ? RESOURCES.reduce((s, r) => s + h.resources[r], 0) : 0;
+  return typicalHandSize(state, p);
 }
 
 /** Share of a player's income per resource (a little smoothing so nothing is impossible). */
@@ -45,8 +51,8 @@ function incomeShare(state: GameState, p: PlayerId): ResourceCounts {
 }
 
 /**
- * A guess at an opponent's hand from public info only: their card count,
- * spread over what their buildings produce. For you it's your real hand.
+ * A guess at an opponent's hand from public info only: a typical card count
+ * (see handCount) spread over what their buildings produce. For you it's your real hand.
  */
 export function publicHand(state: GameState, p: PlayerId, me: PlayerId): ResourceCounts {
   if (p === me) return { ...(state.hands[p]?.resources ?? emptyResources()) };
@@ -57,7 +63,7 @@ export function publicHand(state: GameState, p: PlayerId, me: PlayerId): Resourc
   return out;
 }
 
-/** Chance an opponent holds at least one `r`, from their card count and production. */
+/** Chance an opponent holds at least one `r`, from what they produce. */
 export function likelyHas(state: GameState, p: PlayerId, r: Resource): number {
   const n = handCount(state, p);
   return 1 - Math.pow(1 - incomeShare(state, p)[r], n);

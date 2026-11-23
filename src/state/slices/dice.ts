@@ -39,7 +39,10 @@ export function diceReducer(s: GameState, a: DiceAction): GameState {
   switch (a.type) {
     case 'dice/add': {
       const next = { ...s, diceHistory: [...s.diceHistory, a.roll] };
-      const { gains } = rollPayout(s, a.roll.total);
+      // Only the user's pickup is kept; opponents' cards aren't tracked.
+      const me = s.players.find((p) => p.isMe)?.id;
+      const all = rollPayout(s, a.roll.total).gains;
+      const gains = me && all[me] ? { [me]: all[me] } : {};
       // Logged even when nobody collects (a 7), so the review can tell which turn later events belong to.
       return withLog(next, [...s.cardLog, stamp({ kind: 'production', rollId: a.roll.id, gains, at: a.roll.at })]);
     }
@@ -131,7 +134,7 @@ export function syncBuilds(prev: GameState, next: GameState, a: PieceAction): Ga
       const now = next.pieces.roads[e];
       if (!now) break;
       if (!old) {
-        const free = opening || (replay(log)[now]?.freeRoads ?? 0) > 0;
+        const free = opening || (replay(log, undefined)[now]?.freeRoads ?? 0) > 0;
         build({ player: now, item: 'road', spot: e, free: free || undefined });
       } else if (old !== now) reassign(e, now);
       break;

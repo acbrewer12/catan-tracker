@@ -1,4 +1,8 @@
-/** Bottom-sheet forms for recording card events: trades, steals, discards, dev cards, corrections. */
+/**
+ * Bottom-sheet forms for recording card events. Only the user's hand is
+ * tracked, so trades, bank trades, discards and steals are the user's own;
+ * dev cards are recorded for everyone (they're bought and played in the open).
+ */
 import { useMemo, useState } from 'react';
 import { BUILD_LABEL, DEV_KINDS, DEV_LABEL, countTotal, discardCount, type HandEstimate } from '../../model/cards';
 import { suggestDiscard, type DiscardAdvice } from '../../model/discard';
@@ -9,16 +13,15 @@ import { useGame } from '../../state/store';
 import { tradeRates } from '../../model/suggestionsPlay';
 import { PlayerPicker, ResList, ResourceChoice, ResourcePicker, Sheet, icon, nameOf } from './ui';
 
-export type FormKind = 'trade' | 'bank' | 'steal' | 'discard' | 'buyDev' | 'playDev' | 'fixCount';
+export type FormKind = 'trade' | 'bank' | 'steal' | 'discard' | 'buyDev' | 'playDev';
 
 export const FORM_TITLE: Record<FormKind, string> = {
-  trade: 'Trade between players',
-  bank: 'Trade with bank or harbor',
+  trade: 'Your trade with a player',
+  bank: 'Your trade with the bank or a harbor',
   steal: 'Robber steal',
-  discard: 'Discard on a 7',
+  discard: 'Your discard on a 7',
   buyDev: 'Buy a dev card',
   playDev: 'Play a dev card',
-  fixCount: 'Correct card count',
 };
 
 export interface FormProps {
@@ -43,8 +46,8 @@ export function CardForm(props: FormProps) {
 
 function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: FormProps) {
   const me = players.find((p) => p.isMe)!;
-  const [a, setA] = useState<PlayerId>(player ?? me.id);
-  const [b, setB] = useState<PlayerId | null>(null);
+  const [a, setA] = useState<PlayerId>(kind === 'trade' || kind === 'bank' || kind === 'discard' ? me.id : (player ?? me.id));
+  const [b, setB] = useState<PlayerId | null>(kind === 'trade' && player && player !== me.id ? player : null);
   const { state } = useGame();
   const advice = useMemo(() => (kind === 'discard' ? suggestDiscard(state, me.id, makePlan(state, me.id).goal) : null), [kind, state, me.id]);
   const [give, setGive] = useState<ResourceCounts>(() => (advice && (player ?? me.id) === me.id ? { ...advice.discard } : emptyResources()));
@@ -55,7 +58,6 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
   const [res2, setRes2] = useState<Resource | null>(null);
   const [times, setTimes] = useState(1);
   const rates = tradeRates(state, a);
-  const [count, setCount] = useState<number>(est[player ?? me.id]?.total ?? 0);
 
   const isMe = (id: PlayerId | null) => id === me.id;
   const done = (e: NewCardEvent) => {
@@ -68,8 +70,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
       value={a}
       onChange={(id) => {
         setA(id);
-        setCount(est[id]?.total ?? 0);
-        if (kind === 'discard') setGive(id === me.id && advice ? { ...advice.discard } : emptyResources());
+        if (kind === 'steal') setB(id === me.id ? null : me.id);
       }}
     />
   );
@@ -78,15 +79,14 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
     case 'trade':
       return (
         <div className="form">
-          <label>Who offered</label>
-          {who}
-          <label>Traded with</label>
-          <PlayerPicker players={players} value={b} onChange={setB} exclude={[a]} />
-          <label>{nameOf(players.find((p) => p.id === a))} gave</label>
-          <ResourcePicker value={give} onChange={setGive} />
+          <label>You traded with</label>
+          <PlayerPicker players={players} value={b} onChange={setB} exclude={[me.id]} />
+          <label>You gave</label>
+          <ResourcePicker value={give} onChange={setGive} max={state.hands[me.id]?.resources} />
           <label>…and got</label>
           <ResourcePicker value={get} onChange={setGet} />
-          <button className="primary" disabled={!b || (!countTotal(give) && !countTotal(get))} onClick={() => done({ kind: 'trade', player: a, with: b!, give, get })}>
+          <p className="hint">Trades between other players aren't tracked.</p>
+          <button className="primary" disabled={!b || (!countTotal(give) && !countTotal(get))} onClick={() => done({ kind: 'trade', player: me.id, with: b!, give, get })}>
             Save trade
           </button>
         </div>
@@ -96,9 +96,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
       const ok = !!res && !!res2 && res !== res2;
       return (
         <div className="form">
-          <label>Who traded</label>
-          {who}
-          <label>Gave</label>
+          <label>You gave</label>
           <ResourceChoice value={res} onChange={setRes} sub={(r) => `${rates[r]}:1`} />
           <label>For</label>
           <ResourceChoice value={res2} onChange={setRes2} />
@@ -113,7 +111,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
             </button>
           </div>
           <p className="hint">
-            Rates come from the harbors {isMe(a) ? 'your' : 'their'} settlements and cities touch (4:1 without one).
+            Rates come from the harbors your settlements and cities touch (4:1 without one).
           </p>
           <button
             className="primary"
@@ -126,22 +124,27 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
       );
     }
     case 'steal': {
-      const needRes = isMe(a) || isMe(b);
+      const victim = isMe(a) ? b : me.id;
       return (
         <div className="form">
           <label>Who moved the robber</label>
           {who}
-          <label>Stole from</label>
-          <PlayerPicker players={players} value={b} onChange={setB} exclude={[a]} />
-          <label>Card taken{needRes ? '' : ' (if you saw it)'}</label>
+          {isMe(a) ? (
+            <>
+              <label>You stole from</label>
+              <PlayerPicker players={players} value={b} onChange={setB} exclude={[me.id]} />
+            </>
+          ) : (
+            <p className="hint">Only a steal from you changes your hand. Steals between other players aren't tracked.</p>
+          )}
+          <label>{isMe(a) ? 'Card you got' : 'Card they took from you'}</label>
           <ResourceChoice value={res} onChange={(r) => setRes(res === r ? null : r)} />
-          {!needRes && <p className="hint">Leave it blank if you didn't see. The app keeps track of every card it could have been.</p>}
           <button
             className="primary"
-            disabled={!b || (needRes && !res) || est[b]?.total === 0}
-            onClick={() => done({ kind: 'steal', thief: a, victim: b!, resource: res ?? undefined })}
+            disabled={!victim || !res || (!isMe(a) && est[me.id]?.total === 0)}
+            onClick={() => done({ kind: 'steal', thief: a, victim: victim!, resource: res! })}
           >
-            {b && est[b]?.total === 0 ? 'They have no cards' : 'Save steal'}
+            {!isMe(a) && est[me.id]?.total === 0 ? 'You have no cards' : 'Save steal'}
           </button>
         </div>
       );
@@ -150,9 +153,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
       const need = discardCount(est[a]?.total ?? 0);
       return (
         <div className="form">
-          <label>Who discarded</label>
-          {who}
-          <p className="hint">{need ? `${nameOf(players.find((p) => p.id === a))} should discard ${need} (of ${est[a].total}).` : 'They hold 7 or fewer, so no discard is needed.'}</p>
+          <p className="hint">{need ? `You discard ${need} (of ${est[a].total}).` : 'You hold 7 or fewer, so no discard is needed.'}</p>
           {isMe(a) && advice && <p className="hint discard-why">Suggested: drop <ResList res={advice.discard} />. {discardWhy(advice)} Change it below if you like.</p>}
           <ResourcePicker value={give} onChange={setGive} />
           <button className="primary" disabled={!countTotal(give)} onClick={() => done({ kind: 'lose', player: a, resources: give, reason: 'discard' })}>
@@ -182,14 +183,14 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
       const others = players.filter((p) => p.id !== a);
       const ok =
         !!dev &&
-        (dev !== 'yearOfPlenty' || countTotal(get) === 2) &&
+        (dev !== 'yearOfPlenty' || !isMe(a) || countTotal(get) === 2) &&
         (dev !== 'monopoly' || !!res);
       return (
         <div className="form">
           <label>Who played it</label>
           {who}
           <DevChoice value={dev} onChange={setDev} exclude={['victoryPoint']} have={isMe(a) ? est[a]?.dev : undefined} />
-          {dev === 'yearOfPlenty' && (
+          {dev === 'yearOfPlenty' && isMe(a) && (
             <>
               <label>Took 2 from the bank</label>
               <ResourcePicker value={get} onChange={setGet} max={{ wood: 2, brick: 2, sheep: 2, wheat: 2, ore: 2 }} />
@@ -201,8 +202,8 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
               <ResourceChoice value={res} onChange={setRes} />
               {res && (
                 <>
-                  <label>How many each player handed over</label>
-                  {others.map((p) => (
+                  <label>{isMe(a) ? 'How many each player handed you' : 'How many you handed over'}</label>
+                  {(isMe(a) ? others : [me]).map((p) => (
                     <div key={p.id} className="row">
                       <span className="grow">
                         {nameOf(p)} {icon(res)}
@@ -230,7 +231,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
                 kind: 'playDev',
                 player: a,
                 card: dev!,
-                take: dev === 'yearOfPlenty' ? get : undefined,
+                take: dev === 'yearOfPlenty' && isMe(a) ? get : undefined,
                 resource: dev === 'monopoly' ? res! : undefined,
                 taken: dev === 'monopoly' ? taken : undefined,
               });
@@ -242,26 +243,6 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
         </div>
       );
     }
-    case 'fixCount':
-      return (
-        <div className="form">
-          <p className="hint">Count the cards in a player's hand on the table. If it differs, set it here and the app adjusts its guess.</p>
-          <PlayerPicker players={players} value={a} onChange={(id) => { setA(id); setCount(est[id]?.total ?? 0); }} exclude={[me.id]} />
-          <div className="row">
-            <span className="grow">Cards in hand</span>
-            <button className="icon-btn" disabled={count <= 0} onClick={() => setCount(count - 1)}>
-              −
-            </button>
-            <b className="count">{count}</b>
-            <button className="icon-btn" onClick={() => setCount(count + 1)}>
-              +
-            </button>
-          </div>
-          <button className="primary" disabled={isMe(a) || count === est[a]?.total} onClick={() => done({ kind: 'setTotal', player: a, total: count })}>
-            Save
-          </button>
-        </div>
-      );
   }
 }
 

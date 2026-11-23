@@ -154,7 +154,6 @@ function LastRoll({ roll, est, meId, openForm, go }: { roll: DiceRoll; est: Reco
   // What the robber blocked / bank couldn't pay, judged from the board as it is now.
   const { blocked, shortages } = useMemo(() => rollPayout(state, roll.total, bankLeft(state)), [state, roll.total]);
   const roller = players.find((p) => p.id === roll.player);
-  const ordered = [...players].sort((a, b) => Number(b.isMe) - Number(a.isMe));
 
   return (
     <section className={`card last-roll ${roll.total === 7 ? 'seven' : ''}`}>
@@ -172,24 +171,20 @@ function LastRoll({ roll, est, meId, openForm, go }: { roll: DiceRoll; est: Reco
         <SevenSteps est={est} roller={roll.player} openForm={openForm} go={go} />
       ) : (
         <ul className="pickups">
-          {ordered.map((p) => (
-            <li key={p.id} className={p.isMe ? 'me' : ''}>
-              <Swatch p={p} />
-              <span className="who">{p.isMe ? 'You pick up' : nameOf(p)}</span>
-              <ResList res={gains[p.id]} empty={p.isMe ? 'nothing this time' : '–'} />
-              {blocked[p.id] && (
-                <span className="blocked">
-                  🚫 robber blocked <ResList res={blocked[p.id]} />
-                </span>
-              )}
-            </li>
-          ))}
+          <li className="me">
+            <span className="who">You pick up</span>
+            <ResList res={gains[meId]} empty="nothing this time" />
+            {blocked[meId] && (
+              <span className="blocked">
+                🚫 robber blocked <ResList res={blocked[meId]} />
+              </span>
+            )}
+          </li>
         </ul>
       )}
       {shortages.length > 0 && (
         <p className="hint warning">Bank ran short of {shortages.map(icon).join(' ')}, so it paid less than usual.</p>
       )}
-      {!prod && roll.total !== 7 && Object.keys(blocked).length === 0 && <p className="hint">Nobody has a building on a {roll.total}.</p>}
       {gains[meId] && <p className="hint">Added to your hand on the Cards tab.</p>}
     </section>
   );
@@ -197,26 +192,22 @@ function LastRoll({ roll, est, meId, openForm, go }: { roll: DiceRoll; est: Reco
 
 function SevenSteps({ est, roller, openForm, go }: { est: Record<PlayerId, HandEstimate>; roller?: PlayerId; openForm: Open; go: (id: string) => void }) {
   const { state } = useGame();
-  const over = state.players.filter((p) => discardCount(est[p.id].total) > 0);
+  const me = state.players.find((p) => p.isMe)!;
+  const mine = discardCount(est[me.id].total);
   return (
     <div className="seven-steps">
       <p>
         <b>Robber!</b> Everyone with more than 7 cards discards half.
       </p>
-      {over.length ? (
+      {mine ? (
         <ul className="pickups">
-          {over.map((p) => (
-            <li key={p.id}>
-              <Swatch p={p} />
-              <span className="who">
-                {p.isMe ? 'You discard' : `${nameOf(p)} discards`} {discardCount(est[p.id].total)}
-              </span>
-              <button onClick={() => openForm('discard', p.id)}>Record</button>
-            </li>
-          ))}
+          <li className="me">
+            <span className="who">You discard {mine}</span>
+            <button onClick={() => openForm('discard', me.id)}>Record</button>
+          </li>
         </ul>
       ) : (
-        <p className="hint">Nobody holds more than 7 cards, as far as the app knows.</p>
+        <p className="hint">You hold 7 or fewer, so you keep your cards.</p>
       )}
       <div className="row wrap">
         <button onClick={() => go('pieces')}>Move robber</button>
@@ -241,7 +232,23 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
   const who = (id: PlayerId) => nameOf(state.players.find((p) => p.id === id));
   const [showAll, setShowAll] = useState(false);
   const rates = tradeRates(state, me.id);
-  const log = [...state.cardLog].reverse();
+  // Only what touches your hand, plus dev cards played in the open (older saves also logged others' cards).
+  const mineOnly = (e: CardEvent) => {
+    switch (e.kind) {
+      case 'production':
+        return !!e.gains[me.id];
+      case 'trade':
+        return e.player === me.id || e.with === me.id;
+      case 'steal':
+        return e.thief === me.id || e.victim === me.id;
+      case 'build':
+      case 'playDev':
+        return true;
+      default:
+        return e.player === me.id;
+    }
+  };
+  const log = state.cardLog.filter(mineOnly).reverse();
 
   return (
     <>
@@ -302,12 +309,8 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
       </section>
 
       <section className="card">
-        <div className="row between">
-          <span className="label">Opponents (card counts)</span>
-          <button className="link" onClick={() => openForm('fixCount')}>
-            correct a count
-          </button>
-        </div>
+        <span className="label">Opponents</span>
+        <p className="hint">Only your own cards are tracked. For others the app counts what's played in the open: dev cards bought and knights.</p>
         <ul className="opponents">
           {state.players
             .filter((p) => !p.isMe)
@@ -320,11 +323,9 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
                       <Swatch p={p} /> <b>{p.name}</b>
                     </span>
                     <span>
-                      <b>{e.total}</b> cards{e.devCards ? ` · ${e.devCards} dev` : ''}
-                      {e.knightsPlayed ? ` · ${e.knightsPlayed}⚔️` : ''}
+                      {e.devCards} dev · {e.knightsPlayed}⚔️
                     </span>
                   </div>
-                  {e.missedCards && <p className="hint small warning">Spent cards the app didn't see them get. Correct their count if needed.</p>}
                 </li>
               );
             })}
@@ -395,7 +396,7 @@ function StatsView({ est }: { est: Record<PlayerId, HandEstimate> }) {
       </section>
 
       <section className="card">
-        <span className="label">Picked up from rolls</span>
+        <span className="label">You picked up from rolls</span>
         <table className="table">
           <thead>
             <tr>
@@ -407,7 +408,7 @@ function StatsView({ est }: { est: Record<PlayerId, HandEstimate> }) {
             </tr>
           </thead>
           <tbody>
-            {state.players.map((p) => {
+            {state.players.filter((p) => p.isMe).map((p) => {
               const got = est[p.id].produced;
               return (
                 <tr key={p.id}>
@@ -428,24 +429,9 @@ function StatsView({ est }: { est: Record<PlayerId, HandEstimate> }) {
       </section>
 
       <section className="card">
-        <span className="label">Bank and deck</span>
-        <BankRow />
+        <span className="label">Deck</span>
         <p className="hint">Dev cards left in the deck: {devCardsLeft(state)}</p>
       </section>
     </>
-  );
-}
-
-function BankRow() {
-  const { state } = useGame();
-  const left = bankLeft(state);
-  return (
-    <div className="opp-res">
-      {RESOURCES.map((r) => (
-        <span key={r} className="opp-cell" style={{ background: TERRAIN_STYLE[r].fill }}>
-          {icon(r)} ≤{left[r]}
-        </span>
-      ))}
-    </div>
   );
 }

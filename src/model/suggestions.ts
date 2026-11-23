@@ -57,6 +57,17 @@ export function playerProduction(state: GameState, player: PlayerId, ignoreRobbe
 }
 
 /**
+ * A guess at how many resource cards an opponent holds, from public info
+ * only (their card count isn't tracked): about a round and a half of what
+ * their buildings produce, between 1 and 7, or 0 if they produce nothing.
+ */
+export function typicalHandSize(state: GameState, player: PlayerId): number {
+  const inc = playerProduction(state, player, true);
+  const perRound = (RESOURCES.reduce((s, r) => s + inc[r], 0) / 36) * state.players.length;
+  return perRound > 0 ? Math.max(1, Math.min(7, Math.round(perRound * 1.5))) : 0;
+}
+
+/**
  * Distance rule only: the corner is free and no neighbour has a building.
  * Used to score hypothetical spots for any player; for a real legality check
  * use checkBuilding in model/pieces.ts.

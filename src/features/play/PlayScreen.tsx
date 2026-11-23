@@ -143,17 +143,13 @@ export function PlayScreen({ go }: { go: (id: string) => void }) {
           <section className="card">
             <span className="label">What did {nameOf(current)} do?</span>
             <div className="action-grid play-actions">
-              <button onClick={() => open('trade', current.id)}>🤝 Trade with a player</button>
-              <button onClick={() => open('bank', current.id)}>🏦 Bank / harbor</button>
+              <button onClick={() => open('trade', current.id)}>🤝 {current.isMe ? 'Trade with a player' : 'Traded with you'}</button>
+              {current.isMe && <button onClick={() => open('bank', current.id)}>🏦 Bank / harbor</button>}
               <button onClick={() => open('build', current.id)}>🔨 Build</button>
               <button onClick={() => open('buyDev', current.id)}>🃏 Buy dev card</button>
               <button onClick={() => open('playDev', current.id)}>✨ Play dev card</button>
               <button onClick={() => open('offer', current.isMe ? undefined : current.id)}>🙋 {current.isMe ? 'Someone offers you a trade' : 'They offer you a trade'}</button>
-              {current.isMe ? (
-                <button onClick={() => go('dice')}>✏️ Fix my cards</button>
-              ) : (
-                <button onClick={() => open('fixCount', current.id)}>✏️ Correct their count</button>
-              )}
+              <button onClick={() => go('dice')}>✏️ Fix my cards</button>
             </div>
           </section>
           <TurnLog roll={turn.roll} />
@@ -202,7 +198,7 @@ function TurnBar({ current, est, onPick }: { current?: PlayerId; est: Record<Pla
               <b className="name">{nameOf(p)}</b>
             </span>
             <small>
-              {boardPoints(state, id, holder)}★ · {cards(est[id]?.total ?? 0)}{est[id]?.devCards ? ` · ${est[id].devCards}🃏` : ''}
+              {boardPoints(state, id, holder)}★{est[id]?.known ? ` · ${cards(est[id].total)}` : ''}{est[id]?.devCards ? ` · ${est[id].devCards}🃏` : ''}
             </small>
           </button>
         );
@@ -271,7 +267,7 @@ function RollCard({ roll, player, est, open }: { roll: DiceRoll; player: Player;
             ))}
         </ul>
       ) : (
-        <p className="hint">Nobody picks up anything on a {roll.total}.</p>
+        <p className="hint">You pick up nothing on a {roll.total}.</p>
       )}
     </section>
   );
@@ -280,8 +276,8 @@ function RollCard({ roll, player, est, open }: { roll: DiceRoll; player: Player;
 function SevenSteps({ thief, est, since, open }: { thief: PlayerId; est: Record<PlayerId, HandEstimate>; since: CardEvent[]; open: (k: Popup['kind'], p?: PlayerId) => void }) {
   const { state } = useGame();
   const discarded = new Set(since.filter((e) => e.kind === 'lose' && e.reason === 'discard').map((e) => (e as { player: PlayerId }).player));
-  // Judge who must discard from their hand before any discard this turn.
-  const over = state.players.filter((p) => discarded.has(p.id) || discardCount(est[p.id].total) > 0);
+  // Only your own discard is tracked; judge it from your hand before any discard this turn.
+  const over = state.players.filter((p) => p.isMe && (discarded.has(p.id) || discardCount(est[p.id].total) > 0));
   const stole = since.find((e): e is Extract<CardEvent, { kind: 'steal' }> => e.kind === 'steal' && e.thief === thief);
   const name = (id: PlayerId) => nameOf(state.players.find((p) => p.id === id));
   return (
@@ -300,7 +296,7 @@ function SevenSteps({ thief, est, since, open }: { thief: PlayerId; est: Record<
           ))}
         </ul>
       ) : (
-        <p className="hint">Nobody holds more than 7 cards, as far as the app knows.</p>
+        <p className="hint">You hold 7 or fewer, so you keep your cards.</p>
       )}
       {stole ? (
         <p className="hint">
@@ -318,21 +314,19 @@ function SevenSteps({ thief, est, since, open }: { thief: PlayerId; est: Record<
 const cards = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
 const fmt = (r: { min: number; max: number }) => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
 
-/** The focused player's hand: your exact cards; for others only what the table can see (how many cards). */
+/** The focused player's hand: your exact cards; for others only what's played in the open (dev cards, knights). */
 function HandCard({ player, est }: { player?: Player; est?: HandEstimate }) {
   if (!player || !est) return null;
   if (!player.isMe)
     return (
       <section className="card">
         <div className="row between">
-          <span className="label">{player.name}'s hand</span>
+          <span className="label">{player.name}</span>
           <span>
-            <b>{est.total}</b> {est.total === 1 ? 'card' : 'cards'}
-            {est.devCards ? ` · ${est.devCards} dev` : ''}
-            {est.knightsPlayed ? ` · ${est.knightsPlayed}⚔️` : ''}
+            {est.devCards} dev · {est.knightsPlayed}⚔️
           </span>
         </div>
-        {est.missedCards && <p className="hint small warning">Spent cards the app didn't see them get. Correct the count if needed.</p>}
+        <p className="hint small">Only your own cards are tracked.</p>
       </section>
     );
   const exact = toCounts(Object.fromEntries(RESOURCES.map((r) => [r, est.resources[r].min])));
