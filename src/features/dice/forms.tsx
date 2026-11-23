@@ -1,11 +1,13 @@
 /** Bottom-sheet forms for recording card events: trades, steals, discards, dev cards, corrections. */
-import { useState } from 'react';
-import { DEV_KINDS, DEV_LABEL, countTotal, discardCount, type HandEstimate } from '../../model/cards';
+import { useMemo, useState } from 'react';
+import { BUILD_LABEL, DEV_KINDS, DEV_LABEL, countTotal, discardCount, type HandEstimate } from '../../model/cards';
+import { suggestDiscard, type DiscardAdvice } from '../../model/discard';
+import { makePlan } from '../../model/plan';
 import { emptyResources, type DevCardKind, type Player, type PlayerId, type Resource, type ResourceCounts } from '../../model/types';
 import type { NewCardEvent } from '../../state/slices/dice';
 import { useGame } from '../../state/store';
 import { tradeRates } from '../../model/suggestionsPlay';
-import { PlayerPicker, ResourceChoice, ResourcePicker, Sheet, icon, nameOf } from './ui';
+import { PlayerPicker, ResList, ResourceChoice, ResourcePicker, Sheet, icon, nameOf } from './ui';
 
 export type FormKind = 'trade' | 'bank' | 'steal' | 'discard' | 'buyDev' | 'playDev' | 'fixCount';
 
@@ -43,14 +45,15 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
   const me = players.find((p) => p.isMe)!;
   const [a, setA] = useState<PlayerId>(player ?? me.id);
   const [b, setB] = useState<PlayerId | null>(null);
-  const [give, setGive] = useState<ResourceCounts>(emptyResources());
+  const { state } = useGame();
+  const advice = useMemo(() => (kind === 'discard' ? suggestDiscard(state, me.id, makePlan(state, me.id).goal) : null), [kind, state, me.id]);
+  const [give, setGive] = useState<ResourceCounts>(() => (advice && (player ?? me.id) === me.id ? { ...advice.discard } : emptyResources()));
   const [get, setGet] = useState<ResourceCounts>(emptyResources());
   const [res, setRes] = useState<Resource | null>(null);
   const [dev, setDev] = useState<DevCardKind | null>(null);
   const [taken, setTaken] = useState<Record<PlayerId, number>>({});
   const [res2, setRes2] = useState<Resource | null>(null);
   const [times, setTimes] = useState(1);
-  const { state } = useGame();
   const rates = tradeRates(state, a);
   const [count, setCount] = useState<number>(est[player ?? me.id]?.total ?? 0);
 
@@ -59,7 +62,17 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
     onLog(e);
     onClose();
   };
-  const who = <PlayerPicker players={players} value={a} onChange={(id) => { setA(id); setCount(est[id]?.total ?? 0); }} />;
+  const who = (
+    <PlayerPicker
+      players={players}
+      value={a}
+      onChange={(id) => {
+        setA(id);
+        setCount(est[id]?.total ?? 0);
+        if (kind === 'discard') setGive(id === me.id && advice ? { ...advice.discard } : emptyResources());
+      }}
+    />
+  );
 
   switch (kind) {
     case 'trade':
@@ -140,6 +153,7 @@ function FormBody({ kind, players, est, player, onLog, onClose, onKnight }: Form
           <label>Who discarded</label>
           {who}
           <p className="hint">{need ? `${nameOf(players.find((p) => p.id === a))} should discard ${need} (of ${est[a].total}).` : 'They hold 7 or fewer, so no discard is needed.'}</p>
+          {isMe(a) && advice && <p className="hint discard-why">Suggested: drop <ResList res={advice.discard} />. {discardWhy(advice)} Change it below if you like.</p>}
           <ResourcePicker value={give} onChange={setGive} />
           <button className="primary" disabled={!countTotal(give)} onClick={() => done({ kind: 'lose', player: a, resources: give, reason: 'discard' })}>
             Save discard ({countTotal(give)})
@@ -264,3 +278,12 @@ function DevChoice({ value, onChange, exclude = [], have }: { value: DevCardKind
   );
 }
 
+
+/** One line on why these cards go: what's kept for the goal and what's dropped. */
+function discardWhy(a: DiscardAdvice): string {
+  const kept = Object.values(a.keptForGoal).some((n) => n > 0);
+  const goal = a.goal ? (a.goal.item === 'devCard' ? 'a dev card' : `your ${BUILD_LABEL[a.goal.item].toLowerCase()}`) : null;
+  const head = goal && kept ? `It keeps the cards for ${goal} and drops the ones you need least` : 'It drops the cards you need least';
+  const fast = a.common.length ? `; you roll ${a.common.map(icon).join('')} most, so ${a.common.length > 1 ? 'they come' : 'it comes'} back fastest` : '';
+  return `${head}${fast}.`;
+}

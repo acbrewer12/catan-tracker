@@ -85,69 +85,54 @@ export function OfferSheet({ partner: initial, onClose }: { partner?: PlayerId; 
   );
 }
 
-type Ask = Extract<PlanStep, { kind: 'ask' }>;
+type Get = Extract<PlanStep, { kind: 'get' }>;
 
-/** The plan's player trades for this turn, with what to do if they say no. */
+/** The plan's player trades for this turn, with ranked backups when someone says no. */
 export function AskCard({ me, declined, onDecline }: { me: PlayerId; declined: Array<{ partner: PlayerId; get: Resource }>; onDecline: (a: { partner: PlayerId; get: Resource }) => void }) {
   const { state, dispatch } = useGame();
   const plan = useMemo(() => makePlan(state, me), [state, me]);
-  const asks = plan.steps.filter((s): s is Ask => s.kind === 'ask');
-  // Resources asked for that somebody refused, even if the plan now names someone else.
+  const gets = plan.steps.filter((s): s is Get => s.kind === 'get');
   const keep: Partial<ResourceCounts> = plan.goal?.cost ?? {};
   const hand = state.hands[me]?.resources ?? emptyResources();
-  const refusedGets = [...new Set(declined.map((d) => d.get))].filter((r) => (keep[r] ?? 0) > hand[r]);
   const byId = Object.fromEntries(state.players.map((p) => [p.id, p]));
-  if (!asks.length && !refusedGets.length) return null;
+  // Asks: the plan's first choice for each card, unless that player already said no.
+  const rows = gets.flatMap((g) => {
+    const o = g.options[0];
+    return o?.kind === 'askOther' && !declined.some((d) => d.partner === o.partner && d.get === g.resource) ? [{ partner: o.partner, get: g.resource, give: o.give, why: o.why }] : [];
+  });
+  const refusedGets = [...new Set(declined.map((d) => d.get))].filter((r) => (keep[r] ?? 0) > hand[r]);
+  if (!rows.length && !refusedGets.length) return null;
 
-  function agreed(partner: PlayerId, get: Resource, give: Resource | null) {
-    dispatch({ type: 'cards/log', event: { kind: 'trade', player: me, with: partner, give: give ? { [give]: 1 } : {}, get: { [get]: 1 } } });
+  function agreed(partner: PlayerId, get: Resource, give: Partial<ResourceCounts>) {
+    dispatch({ type: 'cards/log', event: { kind: 'trade', player: me, with: partner, give, get: { [get]: 1 } } });
   }
-
-  const shown = new Set<string>();
-  const rows: Array<{ partner: PlayerId; get: Resource; give: Resource | null; sure?: boolean; theyHave?: number }> = [];
-  for (const a of asks) {
-    rows.push(a);
-    shown.add(`${a.partner}:${a.get}`);
-  }
-  for (const d of declined) if (!shown.has(`${d.partner}:${d.get}`)) rows.push({ ...d, give: null });
 
   return (
     <section className="card asks">
       <span className="label">Ask the table</span>
-      {rows.map((a) => {
-        const no = declined.some((d) => d.partner === a.partner && d.get === a.get);
-        return (
-          <div key={`${a.partner}:${a.get}`} className={`ask ${no ? 'declined' : ''}`}>
-            <p>
-              <Swatch p={byId[a.partner]} /> Ask <b>{byId[a.partner]?.name}</b> for {icon(a.get)}
-              {a.give ? (
-                <>
-                  , offer {icon(a.give)}
-                </>
-              ) : null}
-              {a.theyHave !== undefined && <span className="hint small"> ({a.sure ? 'they have one' : `likely ${a.theyHave}`})</span>}
-            </p>
-            {no ? (
-              <p className="hint">✗ They said no.</p>
-            ) : (
-              <div className="row">
-                <button className="grow" onClick={() => onDecline({ partner: a.partner, get: a.get })}>
-                  They said no
-                </button>
-                <button className="primary grow" onClick={() => agreed(a.partner, a.get, a.give)}>
-                  They agreed
-                </button>
-              </div>
-            )}
+      {rows.map((a) => (
+        <div key={`${a.partner}:${a.get}`} className="ask">
+          <p>
+            <Swatch p={byId[a.partner]} /> Ask <b>{byId[a.partner]?.name}</b> for {icon(a.get)}, offer <ResList res={a.give} />
+          </p>
+          <p className="hint small">{a.why}</p>
+          <div className="row">
+            <button className="grow" onClick={() => onDecline({ partner: a.partner, get: a.get })}>
+              They said no
+            </button>
+            <button className="primary grow" onClick={() => agreed(a.partner, a.get, a.give)}>
+              They agreed
+            </button>
           </div>
-        );
-      })}
+        </div>
+      ))}
       {refusedGets.map((get) => (
         <BackupPlan
           key={get}
           get={get}
+          refused={declined.filter((d) => d.get === get).map((d) => byId[d.partner]?.name ?? '?')}
           options={askBackups(state, me, get, declined.filter((d) => d.get === get).map((d) => d.partner), keep)}
-          onAgreed={(partner) => agreed(partner, get, null)}
+          onAgreed={(partner, give) => agreed(partner, get, give)}
           onDecline={(partner) => onDecline({ partner, get })}
           onBank={(give, count) => dispatch({ type: 'cards/log', event: { kind: 'trade', player: me, with: 'bank', give: { [give]: count }, get: { [get]: 1 } } })}
         />
@@ -156,38 +141,54 @@ export function AskCard({ me, declined, onDecline }: { me: PlayerId; declined: A
   );
 }
 
-function BackupPlan(props: { get: Resource; options: Backup[]; onAgreed: (p: PlayerId) => void; onDecline: (p: PlayerId) => void; onBank: (give: Resource, count: number) => void }) {
+function BackupPlan(props: {
+  get: Resource;
+  refused: string[];
+  options: Backup[];
+  onAgreed: (p: PlayerId, give: Partial<ResourceCounts>) => void;
+  onDecline: (p: PlayerId) => void;
+  onBank: (give: Resource, count: number) => void;
+}) {
   const { state } = useGame();
   const name = (id: PlayerId) => nameOf(state.players.find((p) => p.id === id));
   return (
     <div className="backup">
-      <b>Backup for {icon(props.get)}:</b>
-      {props.options.map((o, i) =>
-        o.kind === 'askOther' ? (
-          <div key={i} className="row wrap">
-            <span className="grow">
-              {i === 0 ? 'Try' : 'Or try'} <b>{name(o.partner)}</b> ({o.sure ? 'has one' : `likely ${o.theyHave}`})
-            </span>
-            <button onClick={() => props.onDecline(o.partner)}>No</button>
-            <button className="primary" onClick={() => props.onAgreed(o.partner)}>
-              Agreed
-            </button>
-          </div>
-        ) : o.kind === 'bank' ? (
-          <div key={i} className="row wrap">
-            <span className="grow">
-              {props.options.length > 1 ? 'Or trade' : 'Trade'} {o.count} {icon(o.give)} for 1 {icon(props.get)} {o.rate === 4 ? 'with the bank' : `at your ${o.rate}:1 harbor`}
-            </span>
-            <button className="primary" onClick={() => props.onBank(o.give, o.count)}>
-              Do it
-            </button>
-          </div>
-        ) : (
-          <p key={i} className="hint">
-            Nobody else is likely to have it and you can't trade for it. Hold your cards and keep saving; the plan above shows what you're waiting for.
-          </p>
-        ),
-      )}
+      <b>
+        {props.refused.join(', ')} said no to {icon(props.get)}. Next best:
+      </b>
+      <ol className="backup-list">
+        {props.options.map((o, i) => (
+          <li key={i}>
+            {o.kind === 'askOther' ? (
+              <div className="row wrap">
+                <span className="grow">
+                  Ask <b>{name(o.partner)}</b>, offer <ResList res={o.give} />
+                </span>
+                <button onClick={() => props.onDecline(o.partner)}>No</button>
+                <button className="primary" onClick={() => props.onAgreed(o.partner, o.give)}>
+                  Agreed
+                </button>
+              </div>
+            ) : o.kind === 'bank' ? (
+              <div className="row wrap">
+                <span className="grow">
+                  Trade {o.count} {icon(o.give)} for {o.count / o.rate} {icon(props.get)} {o.rate === 4 ? 'with the bank' : `at your ${o.rate}:1 harbor`}
+                </span>
+                <button className="primary" onClick={() => props.onBank(o.give, o.count)}>
+                  Do it
+                </button>
+              </div>
+            ) : o.kind === 'switchGoal' ? (
+              <span>
+                Build {o.goal.item === 'city' ? 'a city' : o.goal.item === 'settlement' ? 'a settlement' : 'a dev card'} instead (see the plan)
+              </span>
+            ) : (
+              <span>Keep your cards and save</span>
+            )}
+            <p className="hint small">{o.why}</p>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

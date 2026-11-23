@@ -39,3 +39,4 @@
 .why-plan th, .why-plan td { text-align: left; padding: 4px 2px; border-bottom: 1px solid var(--line); }
 .why-plan th:not(:first-child), .why-plan td:not(:first-child) { text-align: right; }
 .why-plan tr.on td { font-weight: 700; }
+.plan .backups { margin: 4px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; border-top: 1px dashed var(--line); padding-top: 6px; }

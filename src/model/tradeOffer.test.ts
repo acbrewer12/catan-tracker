@@ -54,13 +54,13 @@ describe('judgeOffer', () => {
 });
 
 describe('askBackups', () => {
-  it('skips players who said no and offers a bank trade from spare cards', () => {
+  it('skips players who said no, and falls back to the bank and saving', () => {
     const s = game({ 0: { sheep: 4 }, 1: { wheat: 2 }, 2: { wheat: 1 } });
-    const [me, a, b] = s.players.map((p) => p.id);
+    const [me, a] = s.players.map((p) => p.id);
     const out = askBackups(s, me, 'wheat', [a]);
     expect(out.some((o) => o.kind === 'askOther' && o.partner === a)).toBe(false);
-    expect(out[0]).toMatchObject({ kind: 'askOther', partner: b, sure: true });
-    expect(out.some((o) => o.kind === 'bank' && o.give === 'sheep')).toBe(true);
-    expect(askBackups(s, me, 'wheat', [a, b]).filter((o) => o.kind === 'askOther')).toHaveLength(0);
+    expect(out[out.length - 1].kind).toBe('save');
+    const everyone = s.players.slice(1).map((p) => p.id);
+    expect(askBackups(s, me, 'wheat', everyone).filter((o) => o.kind === 'askOther')).toHaveLength(0);
   });
 });
