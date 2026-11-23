@@ -1,0 +1,17 @@
+.turn-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.turn-chip { flex: 1 0 auto; min-width: 76px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 10px; border-width: 2px; }
+.turn-chip:disabled { opacity: 0.6; }
+.turn-chip.on { background: var(--card); box-shadow: 0 0 0 2px currentColor inset; opacity: 1; }
+.turn-chip .name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-chip small { color: var(--muted); font-size: 12px; }
+.turn-title { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+.turn-title .swatch.small { width: 18px; height: 18px; }
+.play .hand-cells .opp-cell { font-size: 16px; padding: 8px 0; }
+.play .opp-cell.zero { opacity: 0.45; }
+.play-actions button { min-height: 52px; font-weight: 600; }
+.play .log { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.play .log li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.play .my-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.play .plan-panel { display: flex; flex-direction: column; gap: 10px; }
+.play-next { position: sticky; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 1; }
+.play-next button { width: 100%; min-height: 54px; font-size: 18px; box-shadow: 0 4px 14px #0003; }

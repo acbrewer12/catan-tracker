@@ -24,6 +24,7 @@ src/
     registry.tsx         the list of screens in the bottom tab bar
     board-input/         board entry screen
     players/             players screen
+    play/                Play tab: turn-by-turn front end over the same log (model/turns.ts says whose turn)
 ```
 
 ## The game-state model (`src/model/types.ts`)
@@ -132,6 +133,7 @@ Existing actions:
 | Pieces + robber | `state/slices/pieces.ts`, `features/pieces/` |
 | Dice, cards, hand estimates | `state/slices/dice.ts`, `features/dice/` |
 | Suggestions | `model/suggestions*.ts`, `features/tips/` |
+| Play mode (turn-by-turn) | `model/turns.ts`, `features/play/` |
 
 `model/types.ts`, `state/reducer.ts` and `features/registry.tsx` are shared:
 keep changes there small and additive to avoid merge conflicts.
