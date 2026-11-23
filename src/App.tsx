@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import { SCREENS } from './features/registry';
 import { GameProvider, useGame } from './state/store';
+import { ArchiveProvider, useArchive } from './state/archive';
+import { hasPlay } from './model/archive';
 
 const TAB_KEY = 'catan-tracker:tab';
 
 function Shell() {
-  const { undo, canUndo, dispatch } = useGame();
+  const { state, undo, canUndo, dispatch } = useGame();
+  const { save, archive, learning } = useArchive();
+  // Re-render the screens' plans when what the planner learned changes.
+  const learnKey = `${archive.settings.learn}-${archive.settings.learnSince}-${learning?.games ?? 0}`;
   const [tab, setTab] = useState<string>(() => {
     try {
       return localStorage.getItem(TAB_KEY) ?? 'board';
@@ -33,15 +38,19 @@ function Shell() {
           <button
             className="icon-btn"
             onClick={() => {
-              if (window.confirm('Start a new game? Keeps the players, clears the board and everything else.'))
-                dispatch({ type: 'game/new', keepPlayers: true });
+              const msg = hasPlay(state)
+                ? 'Start a new game? This game is kept in Review (finish it there to record the winner). Keeps the players, clears the board.'
+                : 'Start a new game? Keeps the players, clears the board and everything else.';
+              if (!window.confirm(msg)) return;
+              if (hasPlay(state)) save(state, null, false);
+              dispatch({ type: 'game/new', keepPlayers: true });
             }}
           >
             New
           </button>
         </div>
       </header>
-      <main>{screen.render(setTab)}</main>
+      <main key={learnKey}>{screen.render(setTab)}</main>
       <nav className="tabbar">
         {SCREENS.map((s) => (
           <button key={s.id} className={s.id === screen.id ? 'on' : ''} onClick={() => setTab(s.id)}>
@@ -57,7 +66,9 @@ function Shell() {
 export default function App() {
   return (
     <GameProvider>
-      <Shell />
+      <ArchiveProvider>
+        <Shell />
+      </ArchiveProvider>
     </GameProvider>
   );
 }

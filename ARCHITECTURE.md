@@ -25,7 +25,23 @@ src/
     board-input/         board entry screen
     players/             players screen
     play/                Play tab: turn-by-turn front end over the same log (model/turns.ts says whose turn)
+    review/              Review tab: finish/save games, post-game review, patterns, learning
 ```
+
+## Saved games, review and learning
+
+- `state/archive.tsx` keeps finished games in localStorage (`catan-tracker:archive`,
+  separate from the live game) with JSON export/import. "New" saves the old game
+  as unfinished. Pure helpers are in `model/archive.ts`.
+- `model/history.ts` rebuilds the game at any past moment from `cardLog` +
+  `diceHistory` (pieces come from build events). Every roll logs a `production`
+  event, even with no payout, so turns split exactly.
+- `model/review.ts` judges only the user's own decisions (opening picks, unbuilt
+  points, trades, bank rates, robber, discards, dev cards) with the same planner
+  as Tips, using the board as it stood then. Opponents appear only through public info.
+- `model/learning.ts` learns two bounded knobs from finished games: a strategy bias
+  (at most one round, read by `compareStrategies`) and a rival factor (1 to 1.4 on a
+  partner's gain in `evaluateTrade`, stricter only). Off/reset from the Review tab.
 
 ## The game-state model (`src/model/types.ts`)
 
@@ -134,6 +150,7 @@ Existing actions:
 | Dice, cards, hand estimates | `state/slices/dice.ts`, `features/dice/` |
 | Suggestions | `model/suggestions*.ts`, `features/tips/` |
 | Play mode (turn-by-turn) | `model/turns.ts`, `model/tradeOffer.ts`, `features/play/` |
+| Review + learning | `model/history.ts`, `model/review.ts`, `model/archive.ts`, `model/learning.ts`, `state/archive.tsx`, `features/review/` |
 
 `model/types.ts`, `state/reducer.ts` and `features/registry.tsx` are shared:
 keep changes there small and additive to avoid merge conflicts.
