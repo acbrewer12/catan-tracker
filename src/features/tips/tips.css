@@ -29,3 +29,13 @@
 .plan-steps .when { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 6px 0 2px; }
 .plan-steps .when.now { color: var(--accent); }
 .plan-steps .step { flex: 1; font-weight: 600; font-size: 15px; }
+.plan-steps .when.threat, .plan .when.threat { color: var(--warn); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 0 2px; }
+.plan .threats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tip-card.threat { border-color: #e7c58a; background: #fff8ea; }
+.tip-card.threat .why { color: var(--ink); }
+.why-plan { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; }
+.why-plan summary { font-weight: 700; min-height: 32px; display: flex; align-items: center; cursor: pointer; }
+.why-plan table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+.why-plan th, .why-plan td { text-align: left; padding: 4px 2px; border-bottom: 1px solid var(--line); }
+.why-plan th:not(:first-child), .why-plan td:not(:first-child) { text-align: right; }
+.why-plan tr.on td { font-weight: 700; }

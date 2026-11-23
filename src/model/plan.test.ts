@@ -76,7 +76,8 @@ describe('makePlan', () => {
     const g = played({});
     const plan = makePlan(g, g.players[0].id);
     expect(plan.steps[plan.steps.length - 1]?.kind).toBe('robber');
-    expect(plan.steps.some((s) => s.kind === 'then')).toBe(true);
+    expect(plan.strategy).toBeTruthy();
+    expect(plan.strategies.length).toBeGreaterThanOrEqual(3);
   });
 
   it('values goals with roads included in the cost', () => {
@@ -87,13 +88,54 @@ describe('makePlan', () => {
 });
 
 describe('player trades', () => {
-  it('offers spare cards for missing ones', () => {
-    const g = played({ sheep: 2, wheat: 1 });
-    const plan = makePlan(g, g.players[0].id);
-    const ask = plan.steps.find((s) => s.kind === 'ask');
-    if (plan.goal && plan.goal.eta > 0) {
-      expect(ask).toBeTruthy();
-      if (ask?.kind === 'ask') for (const r of ['wood', 'brick', 'sheep', 'wheat', 'ore'] as const) expect(ask.offer[r] > 0 && ask.want[r] > 0).toBe(false);
+  it('asks the player who holds the missing card, offering a spare one', () => {
+    const g = played({ sheep: 2 });
+    const me = g.players[0].id;
+    const blue = g.players[2].id;
+    g.hands[blue] = { ...g.hands[blue], resources: res({ wheat: 3, ore: 3, wood: 2, brick: 2 }) };
+    const plan = makePlan(g, me);
+    const asks = plan.steps.filter((s) => s.kind === 'ask');
+    expect(asks.length).toBeGreaterThan(0);
+    for (const a of asks) if (a.kind === 'ask') {
+      expect(a.partner).toBe(blue);
+      expect(a.sure).toBe(true);
+      if (a.give) expect(a.give).toBe('sheep');
     }
+  });
+
+  it('never asks a player close to winning', () => {
+    const g = played({});
+    const me = g.players[0].id;
+    const op = g.players[1].id;
+    g.hands[op] = { ...g.hands[op], resources: res({ wheat: 5, ore: 5, wood: 5, brick: 5, sheep: 5 }) };
+    const topo = topologyFor('standard');
+    // Give them 8 points with cities on far-apart open corners.
+    let placed = 0;
+    for (const v of Object.keys(topo.vertices)) {
+      if (placed >= 3) break;
+      if (g.pieces.buildings[v] || topo.vertices[v].adjacent.some((a) => g.pieces.buildings[a])) continue;
+      g.pieces.buildings[v] = { player: op, kind: 'city' };
+      placed++;
+    }
+    const plan = makePlan(g, me);
+    expect(plan.threats.some((t) => t.kind === 'nearWin' && t.player === op)).toBe(true);
+    for (const s of plan.steps) if (s.kind === 'ask') expect(s.partner).not.toBe(op);
+  });
+});
+
+describe('dev cards', () => {
+  it('plays a knight first when the robber sits on your tile', () => {
+    const g = played({});
+    const me = g.players[0].id;
+    const topo = topologyFor('standard');
+    const mine = Object.entries(g.pieces.buildings).find(([, b]) => b.player === me)![0];
+    const hex = topo.vertices[mine].hexes.find((h) => g.board.hexes[h].number)!;
+    const withKnight: GameState = {
+      ...g,
+      robber: hex,
+      cardLog: [{ id: 'k1', at: 1, kind: 'build', player: me, item: 'devCard', free: true, devCard: 'knight' }],
+    };
+    const plan = makePlan(withKnight, me);
+    expect(plan.steps[0]).toMatchObject({ kind: 'playDev', card: 'knight', why: 'robberOnYou' });
   });
 });
