@@ -15,6 +15,7 @@ import { COST, DEV_DECK, handEstimates } from './cards';
 import { boardPoints, longestRoad, longestRoadHolder, piecesLeft } from './pieces';
 import { isResource, playerProduction, vertexProduction } from './suggestions';
 import { expansionSpots, largestArmyHolder, tradeRates, tradesFor } from './suggestionsPlay';
+import { strategyBias } from './learning';
 import type { GameState, PlayerId, ResourceCounts, VertexId } from './types';
 import { RESOURCES, emptyResources } from './types';
 
@@ -42,6 +43,8 @@ export interface StrategyResult {
   buys: Purchase[];
   /** Points expected after 10 rounds, to compare strategies that don't finish. */
   pointsAt10: number;
+  /** Rounds added when ranking, learned from past games (model/learning.ts). */
+  learnedBias?: number;
 }
 
 /** Everything the simulations need about a player, computed once. */
@@ -261,7 +264,15 @@ function simulate(state: GameState, me: PlayerId, id: StrategyId, o: PlayerOutlo
 export function compareStrategies(state: GameState, me: PlayerId): { outlook: PlayerOutlook; results: StrategyResult[] } {
   const o = outlook(state, me);
   const ids: StrategyId[] = ['cities', 'expand', 'devCards', ...(o.roadsForLongest > 0 && o.roadsForLongest <= 8 ? (['longestRoad'] as const) : [])];
-  const results = ids.map((id) => simulate(state, me, id, o)).sort((a, b) => a.rounds - b.rounds || b.pointsAt10 - a.pointsAt10);
+  // Learned from past games: at most a round either way, so it only settles near-ties.
+  const rank = (r: StrategyResult) => r.rounds + (r.learnedBias ?? 0);
+  const results = ids
+    .map((id) => {
+      const r = simulate(state, me, id, o);
+      const bias = strategyBias(id);
+      return bias ? { ...r, learnedBias: bias } : r;
+    })
+    .sort((a, b) => rank(a) - rank(b) || b.pointsAt10 - a.pointsAt10);
   return { outlook: o, results };
 }
 

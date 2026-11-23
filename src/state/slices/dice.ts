@@ -40,7 +40,7 @@ export function diceReducer(s: GameState, a: DiceAction): GameState {
     case 'dice/add': {
       const next = { ...s, diceHistory: [...s.diceHistory, a.roll] };
       const { gains } = rollPayout(s, a.roll.total);
-      if (!Object.keys(gains).length) return next;
+      // Logged even when nobody collects (a 7), so the review can tell which turn later events belong to.
       return withLog(next, [...s.cardLog, stamp({ kind: 'production', rollId: a.roll.id, gains, at: a.roll.at })]);
     }
     case 'dice/removeLast':

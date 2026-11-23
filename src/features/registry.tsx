@@ -9,6 +9,7 @@ import { DiceScreen } from './dice/DiceScreen';
 import { PiecesScreen } from './pieces/PiecesScreen';
 import { Tips } from './tips/Tips';
 import { PlayScreen } from './play/PlayScreen';
+import { ReviewScreen } from './review/ReviewScreen';
 
 export interface Screen {
   id: string;
@@ -24,4 +25,5 @@ export const SCREENS: Screen[] = [
   { id: 'play', label: 'Play', icon: '▶️', render: (go) => <PlayScreen go={go} /> },
   { id: 'dice', label: 'Dice', icon: '🎲', render: (go) => <DiceScreen go={go} /> },
   { id: 'tips', label: 'Tips', icon: '💡', render: (go) => <Tips go={go} /> },
+  { id: 'review', label: 'Review', icon: '📈', render: () => <ReviewScreen /> },
 ];

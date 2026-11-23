@@ -420,6 +420,7 @@ function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: Player
             : `${WIN_POINTS} points is a long way off; this path gets you about ${num(st.pointsAt10)} points in 10 rounds`}{' '}
           (you have {o.points}
           {o.hiddenPoints ? `, ${o.hiddenPoints} hidden` : ''}).
+          {(st.learnedBias ?? 0) < 0 && ' Your past games nudged the planner toward this (see Review).'}
         </p>
       )}
       <ol className="plan-steps">

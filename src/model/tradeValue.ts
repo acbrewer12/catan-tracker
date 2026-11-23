@@ -18,6 +18,7 @@ import { affordOdds, WIN_POINTS, type AffordOdds } from './strategy';
 import { playerProduction } from './suggestions';
 import { largestArmyHolder, tradeRates, tradesFor } from './suggestionsPlay';
 import { COST } from './cards';
+import { rivalFactor } from './learning';
 import { RESOURCES, emptyResources, type GameState, type PlayerId, type Resource, type ResourceCounts } from './types';
 
 type Counts = Partial<ResourceCounts>;
@@ -169,7 +170,8 @@ export function evaluateTrade(state: GameState, me: PlayerId, partner: PlayerId,
   const theirs = impact(state, partner, theirBefore, theirAfter);
   const lead = Math.max(0, theirs.points - mine.points);
   const near = theirs.points >= WIN_POINTS - 3;
-  const w = 1 + 0.25 * lead + (near ? 1 : 0);
+  // Opponents who often win in this group count extra (learned; 1 when nothing is learned).
+  const w = (1 + 0.25 * lead + (near ? 1 : 0)) * rivalFactor(state.players.find((p) => p.id === partner)?.name);
   const myGain = mine.roundsSaved + (mine.enablesNow ? 1 + mine.pointsNow : 0);
   const theirGain = theirs.roundsSaved + (theirs.enablesNow ? 1 + theirs.pointsNow : 0);
   const value = myGain - w * theirGain;
