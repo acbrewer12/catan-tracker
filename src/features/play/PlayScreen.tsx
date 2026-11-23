@@ -22,13 +22,15 @@ import { FirstPlayer } from '../pieces/FirstPlayer';
 import { PlanPanel } from '../tips/Tips';
 import { BuildSheet, RobberSheet } from './sheets';
 import { PiecesLayer } from './PiecesLayer';
+import { AskCard, OfferSheet } from './trades';
 import '../dice/dice.css';
 import './play.css';
 
 /** Id of the last roll whose turn was ended with "Next turn" (per device). */
 const ENDED_KEY = 'catan-tracker:play-ended';
 
-type Popup = { kind: FormKind; player?: PlayerId } | { kind: 'build'; player: PlayerId } | { kind: 'robber'; player: PlayerId };
+type Popup = { kind: FormKind; player?: PlayerId } | { kind: 'build'; player: PlayerId } | { kind: 'robber'; player: PlayerId } | { kind: 'offer'; player?: PlayerId };
+type Declined = { partner: PlayerId; get: Resource };
 
 let rollSeq = 0;
 const newRollId = () => `r${Date.now().toString(36)}p${(rollSeq++).toString(36)}`;
@@ -58,6 +60,8 @@ export function PlayScreen({ go }: { go: (id: string) => void }) {
   const [ended, setEnded] = useEnded();
   const [popup, setPopup] = useState<Popup | null>(null);
   const [roller, setRoller] = useState<PlayerId | null>(null);
+  // Player trades refused this turn (cleared when the roll changes).
+  const [declined, setDeclined] = useState<{ rollId: string; list: Declined[] }>({ rollId: '', list: [] });
   const est = useMemo(() => handEstimates(state), [state]);
   const me = state.players.find((p) => p.isMe);
   const byId = Object.fromEntries(state.players.map((p) => [p.id, p]));
@@ -129,6 +133,13 @@ export function PlayScreen({ go }: { go: (id: string) => void }) {
           <RollCard roll={turn.roll} player={current} est={est} open={open} />
           <HandCard player={current} est={est[current.id]} />
           {current.isMe && <PlanPanel me={current.id} />}
+          {current.isMe && (
+            <AskCard
+              me={current.id}
+              declined={declined.rollId === turn.roll.id ? declined.list : []}
+              onDecline={(d) => setDeclined({ rollId: turn.roll.id, list: [...(declined.rollId === turn.roll.id ? declined.list : []), d] })}
+            />
+          )}
           <section className="card">
             <span className="label">What did {nameOf(current)} do?</span>
             <div className="action-grid play-actions">
@@ -137,6 +148,7 @@ export function PlayScreen({ go }: { go: (id: string) => void }) {
               <button onClick={() => open('build', current.id)}>🔨 Build</button>
               <button onClick={() => open('buyDev', current.id)}>🃏 Buy dev card</button>
               <button onClick={() => open('playDev', current.id)}>✨ Play dev card</button>
+              <button onClick={() => open('offer', current.isMe ? undefined : current.id)}>🙋 {current.isMe ? 'Someone offers you a trade' : 'They offer you a trade'}</button>
               {current.isMe ? (
                 <button onClick={() => go('dice')}>✏️ Fix my cards</button>
               ) : (
@@ -156,7 +168,8 @@ export function PlayScreen({ go }: { go: (id: string) => void }) {
 
       {popup?.kind === 'build' && <BuildSheet player={popup.player} onClose={() => setPopup(null)} />}
       {popup?.kind === 'robber' && <RobberSheet thief={popup.player} onClose={() => setPopup(null)} />}
-      {popup && popup.kind !== 'build' && popup.kind !== 'robber' && (
+      {popup?.kind === 'offer' && <OfferSheet partner={popup.player} onClose={() => setPopup(null)} />}
+      {popup && popup.kind !== 'build' && popup.kind !== 'robber' && popup.kind !== 'offer' && (
         <CardForm
           kind={popup.kind}
           player={popup.player}

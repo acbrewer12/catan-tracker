@@ -15,3 +15,14 @@
 .play .plan-panel { display: flex; flex-direction: column; gap: 10px; }
 .play-next { position: sticky; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 1; }
 .play-next button { width: 100%; min-height: 54px; font-size: 18px; box-shadow: 0 4px 14px #0003; }
+.verdict { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; border: 2px solid var(--line); }
+.verdict > b { font-size: 18px; }
+.verdict.good { border-color: #2e9e5b; background: #e8f6ec; }
+.verdict.bad { border-color: var(--error); background: #fbe9e7; }
+.verdict.meh { border-color: var(--warn); background: #fbf3e0; }
+.verdict .counter { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.play .grow { flex: 1; }
+.asks .ask { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.asks .ask p { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.asks .ask.declined p { color: var(--muted); }
+.asks .backup { display: flex; flex-direction: column; gap: 6px; background: #fbf3e0; border-radius: 10px; padding: 8px 10px; }
