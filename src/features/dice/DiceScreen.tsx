@@ -9,6 +9,7 @@ import { pips, rollChance } from '../../model/board';
 import { RESOURCES, type BuildItem, type CardEvent, type DiceRoll, type PlayerId } from '../../model/types';
 import type { NewCardEvent } from '../../state/slices/dice';
 import { useGame } from '../../state/store';
+import { tradeRates } from '../../model/suggestionsPlay';
 import { CardForm, type FormKind } from './forms';
 import { ResList, Swatch, describeEvent, icon, nameOf } from './ui';
 import './dice.css';
@@ -242,6 +243,7 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
     dispatch({ type: 'cards/log', event: { kind: 'set', player: me.id, resources: { ...hand, [r]: Math.max(0, hand[r] + d) } } });
   const who = (id: PlayerId) => nameOf(state.players.find((p) => p.id === id));
   const [showAll, setShowAll] = useState(false);
+  const rates = tradeRates(state, me.id);
   const log = [...state.cardLog].reverse();
 
   return (
@@ -281,6 +283,11 @@ function CardsView({ est, openForm }: { est: Record<PlayerId, HandEstimate>; ope
             ))}
           </div>
         )}
+        <p className="hint">
+          Bank trades:{' '}
+          {RESOURCES.map((r) => `${icon(r)} ${rates[r]}:1`).join('  ')}
+          {RESOURCES.every((r) => rates[r] === 4) ? ' (no harbor yet)' : ''}
+        </p>
         <p className="hint">Rolls and builds update this on their own. Tap a card to fix a count.</p>
       </section>
 
