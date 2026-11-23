@@ -315,6 +315,25 @@ function PlanCard({ state, me, focus, setFocus }: { state: GameState; me: Player
   );
 }
 
+/** Your step-by-step plan, for other screens (the Play tab shows it on your turn). Tap a step to see it on the board. */
+export function PlanPanel({ me }: { me: PlayerId }) {
+  const { state } = useGame();
+  const [focus, setFocus] = useState<Focus>({});
+  const spots = useMemo(() => expansionSpots(state, me, 3), [state, me]);
+  const hasGoal = useMemo(() => !!makePlan(state, me).goal, [state, me]);
+  if (!hasGoal) return null;
+  return (
+    <div className="tips plan-panel">
+      <PlanCard state={state} me={me} focus={focus} setFocus={(f) => setFocus(JSON.stringify(f) === JSON.stringify(focus) ? {} : f)} />
+      {Object.keys(focus).length > 0 && (
+        <HexBoard board={state.board} robber={state.robber}>
+          <Overlay state={state} ranked={spots.map((s) => s.vertex)} focus={focus} />
+        </HexBoard>
+      )}
+    </div>
+  );
+}
+
 const BUILD_LABEL: Record<BuildKind, string> = { city: '🏙️ City', settlement: '🏠 Settlement', road: '🛣️ Road', devCard: '🃏 Dev card' };
 const STATUS_LABEL = { now: 'Ready', trade: 'With trades', need: 'Need cards', blocked: 'Not possible' };
 
