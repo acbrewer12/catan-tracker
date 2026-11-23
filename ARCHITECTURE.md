@@ -67,8 +67,12 @@ GameState {
   `slices/dice.ts`). For detail beyond `hands` (min / max / expected per
   resource, dev cards left, bank) use `handEstimates`, `devCardsLeft` and
   `bankLeft` from `model/cards.ts`.
-- `hands[me]` is exact. For opponents it is an estimate; `unknown` counts cards
-  we know exist but can't name (for example after a steal we didn't see).
+- Only the user's resource cards are tracked: `hands[me]` is exact. Opponents'
+  hands carry only public counts (dev cards bought, knights played); their
+  resources are always 0 and `handEstimates(...)[id].known` is false. Planners
+  guess an opponent's hand from what they produce (`typicalHandSize` in
+  `model/suggestions.ts`, `publicHand` / `likelyHas` in `model/tradeValue.ts`).
+  Trades between other players aren't logged.
 
 ### IDs: hexes, corners, edges
 

@@ -187,7 +187,7 @@ export function makePlan(state: GameState, player: PlayerId): Plan {
   }
 
   // Robber: best tile (hurts the leader, spares your tiles); steal from whoever
-  // most likely holds a card you still need (public info: income and card count).
+  // most likely holds a card you still need (public info: what they produce).
   const robber = robberTargets(state, player, 1)[0];
   if (robber) {
     const want = nextGoal ? RESOURCES.filter((r) => shortfall(floorAll(hand), nextGoal.cost)[r] > 0) : [];

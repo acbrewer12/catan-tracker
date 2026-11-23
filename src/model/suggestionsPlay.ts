@@ -5,7 +5,7 @@
 import { pips, portAtVertex, topologyFor } from './board';
 import { COST } from './cards';
 import { boardPoints, checkBuilding, longestRoadHolder, piecesLeft } from './pieces';
-import { isOpenCorner, isResource, playerProduction, scoreContext, scoreCorner, type CornerScore } from './suggestions';
+import { isOpenCorner, isResource, playerProduction, scoreContext, typicalHandSize, scoreCorner, type CornerScore } from './suggestions';
 import type { EdgeId, GameState, HexId, PlayerId, Resource, ResourceCounts, VertexId } from './types';
 import { RESOURCES, emptyResources } from './types';
 
@@ -252,10 +252,8 @@ export interface RobberTarget {
 }
 
 
-const handSize = (state: GameState, p: PlayerId) => {
-  const h = state.hands[p];
-  return h ? RESOURCES.reduce((s, r) => s + h.resources[r], 0) + h.unknown : 0;
-};
+/** Opponents' card counts aren't tracked: guess from what they produce. */
+const handSize = (state: GameState, p: PlayerId) => typicalHandSize(state, p);
 
 /** Best hexes to put the robber on, best first. */
 export function robberTargets(state: GameState, player: PlayerId, top = 3): RobberTarget[] {

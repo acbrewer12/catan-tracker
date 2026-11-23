@@ -7,6 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from 'react';
 import type { GameState } from '../model/types';
+import { withHands } from '../model/cards';
 import { newGame } from './initialState';
 import { reducer, type Action } from './reducer';
 
@@ -30,7 +31,8 @@ export function migrate(s: GameState): GameState | null {
   // Added after v1 shipped: card log + knights played. Additive, so no version bump.
   if (!Array.isArray(s.cardLog)) s = { ...s, cardLog: [] };
   s = { ...s, hands: Object.fromEntries(Object.entries(s.hands ?? {}).map(([k, h]) => [k, { ...h, knightsPlayed: h.knightsPlayed ?? 0 }])) };
-  return s;
+  // Rebuild hands from the log: drops opponents' card estimates from older saves.
+  return withHands(s);
 }
 
 interface History {

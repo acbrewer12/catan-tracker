@@ -116,62 +116,70 @@ describe('opening and builds', () => {
   });
 });
 
-describe('opponent estimates', () => {
-  it('an unseen steal leaves a spread that a later build narrows down', () => {
-    const { s, a, b } = setup();
-    let g = run(
+describe('only your own cards are tracked', () => {
+  it("opponents' cards, trades and steals between others are ignored", () => {
+    const { s, me, a, b } = setup();
+    const g = run(
       s,
       { type: 'cards/log', event: { kind: 'gain', player: a, resources: { ore: 1, wood: 1 } } },
       { type: 'cards/log', event: { kind: 'steal', thief: b, victim: a } },
+      { type: 'cards/log', event: { kind: 'trade', player: a, with: b, give: { ore: 1 }, get: { wheat: 1 } } },
+      { type: 'cards/log', event: { kind: 'setTotal', player: a, total: 3 } },
     );
-    let e = handEstimates(g);
-    expect(e[a].total).toBe(1);
-    expect(e[b].total).toBe(1);
-    expect(e[b].resources.ore.expected).toBeCloseTo(0.5);
-    expect(g.hands[b].unknown).toBe(1);
-    // b gets a brick, then builds a road: the stolen card must have been wood.
-    g = run(
-      g,
-      { type: 'cards/log', event: { kind: 'gain', player: b, resources: { brick: 1 } } },
-      { type: 'cards/log', event: { kind: 'build', player: b, item: 'road' } },
-    );
-    e = handEstimates(g);
-    expect(e[b].total).toBe(0);
-    expect(e[b].missedCards).toBe(false);
-    // a is still uncertain (players are tracked separately).
-    expect(e[a].total).toBe(1);
+    const e = handEstimates(g);
+    expect(e[a].known).toBe(false);
+    expect(e[a].total).toBe(0);
+    expect(g.hands[a]).toMatchObject({ unknown: 0, resources: { ore: 0, wood: 0, wheat: 0 } });
+    expect(e[me].known).toBe(true);
   });
 
-  it('Monopoly reveals exact counts', () => {
+  it('your trades and steals with others change your hand', () => {
     const { s, me, a } = setup();
+    const g = run(
+      s,
+      { type: 'cards/log', event: { kind: 'set', player: me, resources: { wood: 2, brick: 0, sheep: 1, wheat: 0, ore: 0 } } },
+      { type: 'cards/log', event: { kind: 'trade', player: me, with: a, give: { wood: 1 }, get: { ore: 1 } } },
+      { type: 'cards/log', event: { kind: 'steal', thief: a, victim: me, resource: 'sheep' } },
+      { type: 'cards/log', event: { kind: 'steal', thief: me, victim: a, resource: 'brick' } },
+    );
+    expect(g.hands[me].resources).toEqual({ wood: 1, brick: 1, sheep: 0, wheat: 0, ore: 1 });
+  });
+
+  it('Monopoly: you lose what you hand over, and gain what others hand you', () => {
+    const { s, me, a, b } = setup();
+    let g = run(s, { type: 'cards/log', event: { kind: 'set', player: me, resources: { wood: 0, brick: 0, sheep: 0, wheat: 3, ore: 0 } } });
+    g = run(g, { type: 'cards/log', event: { kind: 'playDev', player: a, card: 'monopoly', resource: 'wheat', taken: { [me]: 3 } } });
+    expect(g.hands[me].resources.wheat).toBe(0);
+    g = run(g, { type: 'cards/log', event: { kind: 'playDev', player: me, card: 'monopoly', resource: 'ore', taken: { [a]: 2, [b]: 1 } } });
+    expect(g.hands[me].resources.ore).toBe(3);
+  });
+
+  it('knights and dev cards stay counted for everyone (they are played in the open)', () => {
+    const { s, a } = setup();
+    const g = run(
+      s,
+      { type: 'cards/log', event: { kind: 'build', player: a, item: 'devCard', free: true } },
+      { type: 'cards/log', event: { kind: 'playDev', player: a, card: 'knight' } },
+    );
+    expect(g.hands[a].knightsPlayed).toBe(1);
+  });
+
+  it('a roll only records what you pick up', () => {
+    const { s, me, a } = setup();
+    const { v, hex } = cornerOn(s, (h) => h.number === 9);
+    const { v: v2 } = cornerOn(s, (h) => h.id === hex.id, [v, ...topologyFor('standard').vertices[v].adjacent]);
     let g = run(
       s,
-      { type: 'cards/log', event: { kind: 'gain', player: a, resources: { wheat: 2, sheep: 1 } } },
-      { type: 'cards/log', event: { kind: 'steal', thief: me, victim: a, resource: 'sheep' } },
-      { type: 'cards/log', event: { kind: 'playDev', player: me, card: 'monopoly', resource: 'wheat', taken: { [a]: 2 } } },
+      { type: 'pieces/setBuilding', vertex: v, player: me, kind: 'settlement' },
+      { type: 'pieces/setBuilding', vertex: v2, player: a, kind: 'settlement' },
     );
-    expect(g.hands[me].resources).toMatchObject({ wheat: 2, sheep: 1 });
-    expect(g.hands[a].resources.wheat).toBe(0);
-    g = run(g, { type: 'cards/log', event: { kind: 'trade', player: me, with: a, give: { wheat: 1 }, get: {} } });
-    expect(g.hands[a].resources.wheat).toBe(1);
-  });
-
-  it('setTotal adds unknown cards', () => {
-    const { s, a } = setup();
-    const g = run(s, { type: 'cards/log', event: { kind: 'setTotal', player: a, total: 3 } });
-    expect(g.hands[a].unknown).toBe(3);
-  });
-
-  it('removing a roll removes its payout', () => {
-    const { s, me } = setup();
-    const { v } = cornerOn(s, (h) => h.number === 9);
-    let g = run(s, { type: 'pieces/setBuilding', vertex: v, player: me, kind: 'settlement' });
     const before = handEstimates(g)[me].total;
     g = run(g, roll(9));
+    const prod = g.cardLog.find((e) => e.kind === 'production');
+    expect(prod && prod.kind === 'production' ? Object.keys(prod.gains) : []).toEqual([me]);
     expect(handEstimates(g)[me].total).toBeGreaterThan(before);
     g = run(g, { type: 'dice/removeLast' });
     expect(handEstimates(g)[me].total).toBe(before);
-    expect(g.diceHistory).toHaveLength(0);
   });
 });
 

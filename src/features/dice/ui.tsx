@@ -97,7 +97,10 @@ export function describeEvent(e: CardEvent, who: (id: PlayerId) => string): Reac
       return (
         <>
           Roll paid{' '}
-          {Object.entries(e.gains).map(([p, g]) => (
+          {/* Only your pickup (older saves also logged other players'). */}
+          {Object.entries(e.gains)
+            .filter(([p]) => who(p) === 'You')
+            .map(([p, g]) => (
             <span key={p} className="nowrap">
               {who(p)} <ResList res={g} />{' '}
             </span>

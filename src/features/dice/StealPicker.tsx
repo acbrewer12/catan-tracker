@@ -1,7 +1,8 @@
 /**
  * Inline "who did they steal from" picker, shown under the robber on the
  * Pieces tab. Logs a steal in the card log. When the user is the thief or the
- * victim it asks which card; otherwise it records an unseen card.
+ * victim it asks which card (that changes the user's hand); a steal between
+ * two other players is noted but doesn't change anything tracked.
  */
 import { useState } from 'react';
 import { handEstimates } from '../../model/cards';
@@ -19,7 +20,7 @@ export function StealPicker() {
   const lastRoller = state.diceHistory[state.diceHistory.length - 1]?.player;
   const who = thief ?? lastRoller ?? state.players[0].id;
   const est = handEstimates(state);
-  const victims = robberVictims(state, state.robber, who).filter((id) => est[id]?.total > 0);
+  const victims = robberVictims(state, state.robber, who).filter((id) => !est[id]?.known || est[id].total > 0);
   const byId = Object.fromEntries(state.players.map((p) => [p.id, p]));
   const meId = state.players.find((p) => p.isMe)?.id;
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { randomBoard, desertHex, topologyFor } from './board';
 import { legalRoadSpots, legalSettlementSpots, openingTurn } from './pieces';
-import { evaluateTrade, likelyHas, publicHand, visiblePoints } from './tradeValue';
+import { evaluateTrade, handCount, likelyHas, publicHand, visiblePoints } from './tradeValue';
 import { emptyResources, type GameState, type ResourceCounts } from './types';
 import { newGame } from '../state/initialState';
 import { reducer } from '../state/reducer';
@@ -51,19 +51,23 @@ function boost(s: GameState, i: number, points: number): GameState {
 }
 
 describe('public information only', () => {
-  it("guesses an opponent's hand from their card count, not their real cards", () => {
+  it("guesses an opponent's hand from what they produce, never from their cards", () => {
     const s = game({ 1: { ore: 4 } });
     const guess = publicHand(s, s.players[1].id, s.players[0].id);
     const sum = Object.values(guess).reduce((a, b) => a + b, 0);
-    expect(sum).toBeCloseTo(4);
-    // Same guess no matter which 4 cards they really hold.
-    const s2 = game({ 1: { wood: 4 } });
+    expect(sum).toBe(handCount(s, s.players[1].id));
+    expect(sum).toBeGreaterThanOrEqual(1);
+    expect(sum).toBeLessThanOrEqual(7);
+    // Same guess no matter what they really hold.
+    const s2 = game({ 1: { wood: 9 } });
     expect(publicHand(s2, s2.players[1].id, s2.players[0].id)).toEqual(guess);
   });
 
-  it('nobody likely holds anything with no cards', () => {
-    const s = game({});
-    expect(likelyHas(s, s.players[1].id, 'wheat')).toBe(0);
+  it('odds an opponent holds a resource come from production, not logged cards', () => {
+    const a = game({});
+    const b = game({ 1: { wheat: 5 } });
+    expect(likelyHas(b, b.players[1].id, 'wheat')).toBeCloseTo(likelyHas(a, a.players[1].id, 'wheat'));
+    expect(b.hands[b.players[1].id].resources.wheat).toBe(0);
   });
 });
 

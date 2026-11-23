@@ -2,12 +2,11 @@
  * Card tracking: roll payouts, build costs, and hand estimates.
  *
  * Every card movement is a `CardEvent` in `GameState.cardLog`. Replaying the
- * log gives each player's hand. The user's own hand is exact. For opponents we
- * keep every hand they could be holding (a weighted set of "possible hands"),
- * so an unseen robber steal branches into one possibility per resource, and
- * a later build or Monopoly rules possibilities out again. From that we get,
- * per resource, what they definitely have, what they might have, and an
- * expected count.
+ * log gives the user's own hand, exactly. Opponents' resource cards are not
+ * tracked (by choice: only public info is used for them): their `Hand` has
+ * no resources, and only public things are counted for them (dev cards
+ * bought and played, knights). Their card count is unknown (`known: false`
+ * on their estimate); planners guess from what their buildings produce.
  */
 import { hexesAtVertex } from './board';
 import {
@@ -233,12 +232,20 @@ const freshPlayer = (): PlayerCards => ({
 });
 
 /** Replay the card log. Cached per log array, since state updates replace it. */
-const replayCache = new WeakMap<CardEvent[], Record<PlayerId, PlayerCards>>();
-export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
-  const hit = replayCache.get(log);
+const replayCache = new WeakMap<CardEvent[], Map<string, Record<PlayerId, PlayerCards>>>();
+/**
+ * Replay the card log. Resources are only tracked for `me` (the user);
+ * everyone's public counts (dev cards, knights, Road Building) are tracked.
+ */
+export function replay(log: CardEvent[], me: PlayerId | undefined): Record<PlayerId, PlayerCards> {
+  const key = me ?? '';
+  let byMe = replayCache.get(log);
+  const hit = byMe?.get(key);
   if (hit) return hit;
   const ps: Record<PlayerId, PlayerCards> = {};
-  const P = (id: PlayerId) => (ps[id] ??= freshPlayer());
+  const all = (id: PlayerId) => (ps[id] ??= freshPlayer());
+  // Resource changes only land on the user's hand; others get a throwaway.
+  const P = (id: PlayerId) => (id === me ? all(id) : freshPlayer());
   const spend = (id: PlayerId, d: Counts) => {
     const p = P(id);
     const { next, ok } = p.worlds.remove(d);
@@ -260,10 +267,10 @@ export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
         spend(e.player, vec(e.resources));
         break;
       case 'build': {
-        const p = P(e.player);
+        const p = all(e.player);
         if (e.item === 'road' && e.free && p.freeRoads > 0) p.freeRoads--;
         if (!e.free) spend(e.player, vec(COST[e.item]));
-        if (e.startGain) p.worlds = p.worlds.add(vec(e.startGain));
+        if (e.startGain && e.player === me) p.worlds = p.worlds.add(vec(e.startGain));
         if (e.item === 'devCard') {
           p.devCards++;
           if (e.devCard) p.dev[e.devCard]++;
@@ -290,12 +297,12 @@ export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
         break;
       }
       case 'playDev': {
-        const p = P(e.player);
+        const p = all(e.player);
         p.devCards = Math.max(0, p.devCards - 1);
         if (p.dev[e.card] > 0) p.dev[e.card]--;
         if (e.card === 'knight') p.knightsPlayed++;
         if (e.card === 'roadBuilding') p.freeRoads += 2;
-        if (e.card === 'yearOfPlenty' && e.take) p.worlds = p.worlds.add(vec(e.take));
+        if (e.card === 'yearOfPlenty' && e.take && e.player === me) p.worlds = p.worlds.add(vec(e.take));
         if (e.card === 'monopoly' && e.resource && e.taken) {
           const i = RESOURCES.indexOf(e.resource);
           let got = 0;
@@ -304,7 +311,7 @@ export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
             P(id).worlds = P(id).worlds.exactly(i, n).remove(vec({ [e.resource]: n })).next;
             got += n;
           }
-          p.worlds = p.worlds.add(vec({ [e.resource]: got }));
+          if (e.player === me) p.worlds = p.worlds.add(vec({ [e.resource]: got }));
         }
         break;
       }
@@ -313,6 +320,8 @@ export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
         P(e.player).missedCards = false;
         break;
       case 'setTotal': {
+        // Old saves only: opponent card counts are no longer tracked.
+        if (e.player !== me) break;
         const p = P(e.player);
         let diff = e.total - Math.round(p.worlds.total());
         for (; diff > 0; diff--) p.worlds = p.worlds.gainRandom(UNIFORM);
@@ -322,7 +331,8 @@ export function replay(log: CardEvent[]): Record<PlayerId, PlayerCards> {
       }
     }
   }
-  replayCache.set(log, ps);
+  if (!byMe) replayCache.set(log, (byMe = new Map()));
+  byMe.set(key, ps);
   return ps;
 }
 
@@ -336,7 +346,9 @@ export interface ResourceEstimate {
 }
 
 export interface HandEstimate {
-  /** Number of resource cards held (known exactly unless something was missed). */
+  /** True for the user. Opponents' resource cards aren't tracked, so for them this is false and total is 0. */
+  known: boolean;
+  /** Number of resource cards held (the user's; 0 for opponents, see `known`). */
   total: number;
   resources: Record<Resource, ResourceEstimate>;
   devCards: number;
@@ -350,7 +362,7 @@ export interface HandEstimate {
   possibilities: number;
 }
 
-function estimateFor(p: PlayerCards): HandEstimate {
+function estimateFor(p: PlayerCards, known: boolean): HandEstimate {
   const list = p.worlds.list();
   const resources = {} as Record<Resource, ResourceEstimate>;
   RESOURCES.forEach((r, i) => {
@@ -365,6 +377,7 @@ function estimateFor(p: PlayerCards): HandEstimate {
     resources[r] = { min: list.length ? min : 0, max, expected };
   });
   return {
+    known,
     total: Math.round(p.worlds.total()),
     resources,
     devCards: p.devCards,
@@ -379,8 +392,9 @@ function estimateFor(p: PlayerCards): HandEstimate {
 
 /** Detailed estimate for every player (in turn order). */
 export function handEstimates(state: GameState): Record<PlayerId, HandEstimate> {
-  const ps = replay(state.cardLog ?? []);
-  return Object.fromEntries(state.players.map((pl) => [pl.id, estimateFor(ps[pl.id] ?? freshPlayer())]));
+  const me = state.players.find((p) => p.isMe)?.id;
+  const ps = replay(state.cardLog ?? [], me);
+  return Object.fromEntries(state.players.map((pl) => [pl.id, estimateFor(ps[pl.id] ?? freshPlayer(), pl.id === me)]));
 }
 
 /** Compact Hand for `GameState.hands`: definite cards + count of unnamed ones. */
@@ -395,7 +409,7 @@ export function withHands(state: GameState): GameState {
   return { ...state, hands: Object.fromEntries(state.players.map((p) => [p.id, toHand(est[p.id])])) };
 }
 
-/** Upper bound on what's left in the bank (from cards we know are in hands). */
+/** Upper bound on what's left in the bank (only the user's cards are known to be out). */
 export function bankLeft(state: GameState): ResourceCounts {
   const est = handEstimates(state);
   const size = BANK_SIZE[state.board.layout];

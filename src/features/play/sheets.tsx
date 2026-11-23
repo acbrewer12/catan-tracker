@@ -25,7 +25,7 @@ export function BuildSheet({ player, onClose }: { player: PlayerId; onClose: () 
   const [built, setBuilt] = useState<string[]>([]);
   const p = state.players.find((x) => x.id === player);
   const est = handEstimates(state)[player];
-  const freeRoads = replay(state.cardLog)[player]?.freeRoads ?? 0;
+  const freeRoads = replay(state.cardLog, undefined)[player]?.freeRoads ?? 0;
   const left = piecesLeft(state, player);
 
   const vertexOk = (v: string) => {
@@ -110,7 +110,7 @@ export function RobberSheet({ thief, onClose }: { thief: PlayerId; onClose: () =
   const est = handEstimates(state);
   const byId = Object.fromEntries(state.players.map((p) => [p.id, p]));
   const meId = state.players.find((p) => p.isMe)?.id;
-  const victims = state.robber && moved ? robberVictims(state, state.robber, thief).filter((id) => est[id]?.total > 0) : [];
+  const victims = state.robber && moved ? robberVictims(state, state.robber, thief).filter((id) => id !== meId || est[id]?.total > 0) : [];
   const hex = state.robber ? state.board.hexes[state.robber] : null;
 
   function steal(v: PlayerId, resource?: Resource) {
@@ -144,12 +144,12 @@ export function RobberSheet({ thief, onClose }: { thief: PlayerId; onClose: () =
             <div className="chips">
               {victims.map((id) => (
                 <button key={id} className={`pchip ${victim === id ? 'on' : ''}`} onClick={() => (thief === meId || id === meId ? setVictim(id) : steal(id))}>
-                  <Swatch p={byId[id]} /> {nameOf(byId[id])} ({est[id].total})
+                  <Swatch p={byId[id]} /> {nameOf(byId[id])}
                 </button>
               ))}
             </div>
           ) : (
-            <p className="hint">Nobody with cards has a building on this tile, so there's nothing to steal.</p>
+            <p className="hint">Nobody on this tile can be stolen from.</p>
           )}
           {victim && (
             <>
